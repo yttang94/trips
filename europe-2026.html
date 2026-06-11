@@ -473,6 +473,36 @@
   .fp-row:first-of-type{border-top:0}
   .fp-row .fp-p{font-family:var(--mono); font-size:12px; color:var(--muted); white-space:nowrap; text-align:right}
 
+  /* ---------- Sleep tab ---------- */
+  .slp-intro{font-size:13px; color:var(--muted); line-height:1.6; margin-bottom:2px}
+  .slp-tz{display:flex; gap:8px; flex-wrap:wrap; margin:11px 0 4px}
+  .slp-tz .tz{flex:1; min-width:118px; background:#fbf7f0; border:1px solid var(--line); border-radius:10px; padding:8px 10px}
+  .slp-tz .tz b{display:block; font-size:15px; font-family:var(--mono); font-variant-numeric:tabular-nums}
+  .slp-tz .tz span{font-size:11px; color:var(--muted)}
+  .slp-row{display:grid; grid-template-columns:1fr auto; gap:10px; align-items:start; padding:12px 0; border-top:1px solid var(--line2)}
+  .slp-row:first-of-type{border-top:0}
+  .slp-main{min-width:0}
+  .slp-main .nm{font-weight:650; font-size:14px}
+  .slp-main .bw{display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:12.5px; font-weight:700; color:var(--accent); margin-top:4px}
+  .slp-main .bw svg{width:13px; height:13px}
+  .slp-main .nt{font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.45}
+  .slp-side{text-align:right; white-space:nowrap}
+  .slp-hrs{font-family:var(--mono); font-size:14px; font-weight:700; color:var(--ink)}
+  .slp-tag{display:inline-block; font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; border-radius:999px; padding:2px 7px; margin-top:5px}
+  .slp-tag.tight{background:var(--alert-soft); color:var(--alert)}
+  .slp-tag.recovery{background:var(--ok-soft); color:var(--ok)}
+  .slp-tag.sleepin{background:var(--accent-soft); color:var(--accent)}
+  .slp-tw{display:grid; grid-template-columns:24px 1fr auto; gap:10px; align-items:start; padding:12px 0; border-top:1px solid var(--line2)}
+  .slp-tw:first-of-type{border-top:0}
+  .slp-tw .ic{color:var(--accent); margin-top:1px; display:flex}
+  .slp-tw .ic svg{width:18px; height:18px}
+  .slp-tw.sleep .ic{color:#4b5563}
+  .slp-tw .nm{font-weight:650; font-size:13.5px}
+  .slp-tw .nm .dd{color:var(--muted); font-weight:600}
+  .slp-tw .dt{font-size:11.5px; color:var(--muted); margin-top:3px; line-height:1.45}
+  .slp-tw .dur{font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent); text-align:right; white-space:nowrap}
+  .slp-tw.sleep .dur{color:#4b5563}
+
   /* legend / footer */
   .legend{display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 18px; font-size:11px; color:var(--muted)}
   .legend .status{cursor:default}
@@ -522,6 +552,7 @@
     </div>
     <div class="switch" role="tablist">
       <button id="tab-itin" role="tab" aria-selected="true" onclick="showView('itin')">Itinerary</button>
+      <button id="tab-sleep" role="tab" aria-selected="false" onclick="showView('sleep')">Sleep</button>
       <button id="tab-budget" role="tab" aria-selected="false" onclick="showView('budget')">Budget</button>
       <button id="tab-pack" role="tab" aria-selected="false" onclick="showView('pack')">Packing</button>
       <button id="tab-weather" role="tab" aria-selected="false" onclick="showView('weather')">Weather</button>
@@ -560,6 +591,14 @@
       <input type="file" id="restoreFile" accept="application/json,.json" style="display:none">
     </div>
     <div id="days"></div>
+  </section>
+
+  <!-- SLEEP -->
+  <section class="view" id="view-sleep">
+    <div class="note-banner" style="background:var(--accent-soft);border-color:#ecd9cd;color:#7a3a1f">
+      A rest plan built from your itinerary. Europe runs <b>6h behind KL</b>, so early starts feel easy and evenings feel late — the targets below work with that, not against it.
+    </div>
+    <div id="sleep"></div>
   </section>
 
   <!-- BUDGET -->
@@ -1899,9 +1938,97 @@ function renderGuide(){
   document.getElementById('guide').innerHTML = entry+gAround()+italy+swiss+france+stops+countdown;
 }
 
+/* ============================= RENDER: sleep ============================= */
+const SLP_NIGHTS=[
+ {d:'12→13 Jun',loc:'Milan',bed:'22:30',wake:'07:45',hrs:'~9h',note:'Recovery night after the red-eye — sleep long, no hard alarm (brunch isn’t till 09:00).',tag:'recovery'},
+ {d:'13→14 Jun',loc:'Barbiano · Dolomites',bed:'22:30',wake:'06:30',hrs:'~8h',note:'Tired after the 4h drive — you’ll drop off easily.'},
+ {d:'14→15 Jun',loc:'Barbiano',bed:'21:30',wake:'05:00',hrs:'~7.5h',note:'Tightest night — Tre Cime needs a 05:30 breakfast / 06:00 drive. Bed straight after dinner.',tag:'tight'},
+ {d:'15→16 Jun',loc:'Barbiano',bed:'22:00',wake:'06:15',hrs:'~8h',note:'Seceda at dawn, then the drive to Venice.'},
+ {d:'16→17 Jun',loc:'Venice',bed:'22:30',wake:'06:30',hrs:'~8h',note:'You should be on European time by now.'},
+ {d:'17→18 Jun',loc:'Venice',bed:'22:30',wake:'07:15',hrs:'~8.5h',note:'Rest up before the 4-change rail day.'},
+ {d:'18→19 Jun',loc:'Zermatt',bed:'21:30',wake:'05:45',hrs:'~8h',note:'Cook-in dinner, deliberate early night before the 07:00 first cogwheel.',tag:'tight'},
+ {d:'19→20 Jun',loc:'Zermatt',bed:'21:30',wake:'08:30',hrs:'~11h',note:'Sleep in — the next train isn’t till 12:06. Bank the rest.',tag:'sleepin'},
+ {d:'20→21 Jun',loc:'Paris',bed:'23:00',wake:'06:45',hrs:'~7.5h',note:'Arrive Paris 20:04; late dinner with relatives.'},
+ {d:'21→22 Jun',loc:'Paris',bed:'22:30',wake:'05:30',hrs:'~7h',note:'Guard this one — the 18-hour Mont Saint-Michel day follows.',tag:'tight'},
+ {d:'22→23 Jun',loc:'Paris',bed:'00:00',wake:'07:15',hrs:'~7h',note:'Longest day ends ~22:16, supper ~22:45.'},
+ {d:'23→24 Jun',loc:'Paris',bed:'23:00',wake:'07:00',hrs:'~8h',note:'Last night in a bed before the flight home.'}
+];
+const SLP_REDEYE=[
+ {day:'02:15',ic:'plane',s:'KLIA → Dubai',dur:'~7h 50m',t:'Sleep the whole way. It’s already past midnight — board, skip the meal, eye mask + earplugs, aim for 5–6h.',sleep:true},
+ {day:'05:05',ic:'clock',s:'Dubai layover',dur:'~4h',t:'Stay calm and dim. A 30–45 min doze is fine, but don’t fully crash. Hydrate, light breakfast.'},
+ {day:'09:10',ic:'plane',s:'Dubai → Milan',dur:'~6h 25m',t:'Daytime — stay mostly awake. One short nap max, so you last to ~22:30 Milan time.'}
+];
+const SLP_WATCH=[
+ {day:'12 Jun',ic:'plane',s:'Dubai → Milan flight',dur:'~6h 25m',t:'Daytime — your first binge window. Stay awake to start adjusting.'},
+ {day:'18 Jun',ic:'train',s:'Venice → Zermatt · 4 trains',dur:'~6h',t:'2h27 + 1h39 + 37m + 1h13. The biggest screen day — download offline before you leave Venice wifi.'},
+ {day:'20 Jun',ic:'train',s:'Zermatt → Paris · 3 trains',dur:'~6h 30m',t:'Zermatt→Visp is scenic (look out the window); the 3h45 Lausanne→Paris TGV is pure screen time.'},
+ {day:'22 Jun',ic:'train',s:'Paris ⇄ Mont Saint-Michel',dur:'~7h 50m',t:'Two ~3h55 legs. Morning: maybe nap. Evening: light watching — likely no buffet, eat your packed dinner.'},
+ {day:'24 Jun',ic:'plane',s:'Paris CDG → Dubai flight',dur:'~6h 55m',t:'Daytime — reading plus a nap.'}
+];
+const SLP_SLEEPLEG=[
+ {day:'11→12 Jun',ic:'plane',s:'KLIA → Dubai',dur:'~7h 50m',t:'Sleep — the most important rest of the trip.',sleep:true},
+ {day:'25 Jun',ic:'plane',s:'Dubai → Kuala Lumpur',dur:'overnight',t:'Sleep — the homebound red-eye (lands KL 14:25).',sleep:true}
+];
+const SLP_SMALL=[
+ {day:'12 Jun',ic:'train',s:'Malpensa Express → Milano Centrale',dur:'~51 min',t:'Quick read on arrival day.'},
+ {day:'13 Jun',ic:'car',s:'Milan → Ortisei drive',dur:'~4h',t:'Screen time only if you’re the passenger — not if you’re driving.'},
+ {day:'23 Jun',ic:'train',s:'Versailles RER + outlet trains',dur:'~45m + 1h30',t:'RER C to Versailles and the run out to La Vallée Village.'}
+];
+function slpNight(o){
+  const lbl={tight:'Guard it',recovery:'Recovery',sleepin:'Sleep in'}[o.tag];
+  return `<div class="slp-row">
+    <div class="slp-main">
+      <div class="nm">${o.d} · ${o.loc}</div>
+      <div class="bw">${svg('bed')} ${to12h(o.bed)} → ${to12h(o.wake)}</div>
+      <div class="nt">${to12h(o.note)}</div>
+    </div>
+    <div class="slp-side"><div class="slp-hrs">${o.hrs}</div>${lbl?`<span class="slp-tag ${o.tag==='sleepin'?'sleepin':o.tag}">${lbl}</span>`:''}</div>
+  </div>`;
+}
+function slpLeg(o){
+  return `<div class="slp-tw${o.sleep?' sleep':''}">
+    <span class="ic">${svg(o.ic)}</span>
+    <div><div class="nm"><span class="dd">${to12h(o.day)} · </span>${o.s}</div><div class="dt">${to12h(o.t)}</div></div>
+    <div class="dur">${o.dur}</div>
+  </div>`;
+}
+function renderSleep(){
+  const intro = gsec('info','How your body clock shifts',
+    `<div class="slp-intro">You fly <b>KL (UTC+8) → Europe (UTC+2)</b> — Europe runs <b>6 hours behind home</b>. Heading west is the gentler direction, but it has a clear pattern in the first days:</div>
+     <div class="slp-tz">
+       <div class="tz"><b>UTC+8</b><span>Malaysia · home</span></div>
+       <div class="tz"><b>UTC+4</b><span>Dubai · layover</span></div>
+       <div class="tz"><b>UTC+2</b><span>Italy · Switzerland · France</span></div>
+     </div>
+     ${gline('do','<b>Early mornings feel easy.</b> Waking 05:30 in Italy = 11:30 back home — your body is wide awake. The early starts (Tre Cime, Seceda, Gornergrat) line up naturally with jet lag.')}
+     ${gline('dont','<b>Evenings are the enemy.</b> A 20:00 dinner = 02:00 KL. The first 3–4 nights you’ll get sleepy early — go to bed when it hits rather than fighting it.')}
+     ${gline('tip','<b>Goal:</b> be fully on European time by Venice (16–17 Jun).')}`);
+  const redeye = gsec('plane','The outbound red-eye — your most important sleep',
+    `<div class="slp-intro">Reach KLIA by 23:00 on 11 Jun; you depart 02:15. This first night sets up the whole trip.</div>`
+    + SLP_REDEYE.map(slpLeg).join(''));
+  const nights = gsec('bed','Night-by-night plan',
+    `<div class="slp-intro">Target <b>bed → wake</b> times that follow each day’s first activity. Tags flag the nights to guard and the ones to sleep in.</div>`
+    + SLP_NIGHTS.map(slpNight).join(''));
+  const watch = gsec('eye','Transit time to read / watch YouTube',
+    `<div class="slp-intro">Long seated stretches — load your downloads in advance.</div>`
+    + SLP_WATCH.map(slpLeg).join(''));
+  const sleepleg = gsec('bed','Use these legs for sleep, not screens',
+    SLP_SLEEPLEG.map(slpLeg).join(''));
+  const small = gsec('clock','Shorter windows',
+    SLP_SMALL.map(slpLeg).join(''));
+  const tips = gsec('bulb','Sleep tips for this trip',
+    [gline('tip','<b>Download offline</b> before every long rail leg — Italian/French regional trains and the Venice→Zermatt regionals have patchy or no wifi.'),
+     gline('tip','<b>Light sets your clock.</b> Get bright daylight in the afternoon/evening early on to settle onto European time; wear sunglasses if you’re up before dawn.'),
+     gline('tip','<b>Cap naps at 30–45 min</b> and none after ~17:00, or the early-start nights get harder.'),
+     gline('do','<b>Two nights to protect:</b> 14→15 (Tre Cime) and 21→22 (Mont Saint-Michel) — both pair a full day with a pre-dawn start. Cut dinner short and head to bed.'),
+     gline('gen','Caffeine cut-off ~14:00 on the tight nights; hydrate on flights — dry cabins wreck sleep quality.')
+    ].join(''));
+  document.getElementById('sleep').innerHTML = intro+redeye+nights+watch+sleepleg+small+tips;
+}
+
 /* ============================= VIEWS / NAV ============================= */
 function showView(v){
-  ['itin','budget','pack','weather','guide'].forEach(x=>{
+  ['itin','sleep','budget','pack','weather','guide'].forEach(x=>{
     document.getElementById('view-'+x).classList.toggle('on',x===v);
     document.getElementById('tab-'+x).setAttribute('aria-selected',x===v);
   });
@@ -1941,6 +2068,7 @@ renderBudget();
 renderFoodPrices();
 renderPack();
 renderGuide();
+renderSleep();
 renderWeather();
 renderDayStrip();
 setStick();
