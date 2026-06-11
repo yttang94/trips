@@ -473,6 +473,36 @@
   .fp-row:first-of-type{border-top:0}
   .fp-row .fp-p{font-family:var(--mono); font-size:12px; color:var(--muted); white-space:nowrap; text-align:right}
 
+  /* ---------- Sleep tab ---------- */
+  .slp-intro{font-size:13px; color:var(--muted); line-height:1.6; margin-bottom:2px}
+  .slp-tz{display:flex; gap:8px; flex-wrap:wrap; margin:11px 0 4px}
+  .slp-tz .tz{flex:1; min-width:118px; background:#fbf7f0; border:1px solid var(--line); border-radius:10px; padding:8px 10px}
+  .slp-tz .tz b{display:block; font-size:15px; font-family:var(--mono); font-variant-numeric:tabular-nums}
+  .slp-tz .tz span{font-size:11px; color:var(--muted)}
+  .slp-row{display:grid; grid-template-columns:1fr auto; gap:10px; align-items:start; padding:12px 0; border-top:1px solid var(--line2)}
+  .slp-row:first-of-type{border-top:0}
+  .slp-main{min-width:0}
+  .slp-main .nm{font-weight:650; font-size:14px}
+  .slp-main .bw{display:inline-flex; align-items:center; gap:5px; font-family:var(--mono); font-size:12.5px; font-weight:700; color:var(--accent); margin-top:4px}
+  .slp-main .bw svg{width:13px; height:13px}
+  .slp-main .nt{font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.45}
+  .slp-side{text-align:right; white-space:nowrap}
+  .slp-hrs{font-family:var(--mono); font-size:14px; font-weight:700; color:var(--ink)}
+  .slp-tag{display:inline-block; font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; border-radius:999px; padding:2px 7px; margin-top:5px}
+  .slp-tag.tight{background:var(--alert-soft); color:var(--alert)}
+  .slp-tag.recovery{background:var(--ok-soft); color:var(--ok)}
+  .slp-tag.sleepin{background:var(--accent-soft); color:var(--accent)}
+  .slp-tw{display:grid; grid-template-columns:24px 1fr auto; gap:10px; align-items:start; padding:12px 0; border-top:1px solid var(--line2)}
+  .slp-tw:first-of-type{border-top:0}
+  .slp-tw .ic{color:var(--accent); margin-top:1px; display:flex}
+  .slp-tw .ic svg{width:18px; height:18px}
+  .slp-tw.sleep .ic{color:#4b5563}
+  .slp-tw .nm{font-weight:650; font-size:13.5px}
+  .slp-tw .nm .dd{color:var(--muted); font-weight:600}
+  .slp-tw .dt{font-size:11.5px; color:var(--muted); margin-top:3px; line-height:1.45}
+  .slp-tw .dur{font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent); text-align:right; white-space:nowrap}
+  .slp-tw.sleep .dur{color:#4b5563}
+
   /* legend / footer */
   .legend{display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 18px; font-size:11px; color:var(--muted)}
   .legend .status{cursor:default}
@@ -522,6 +552,7 @@
     </div>
     <div class="switch" role="tablist">
       <button id="tab-itin" role="tab" aria-selected="true" onclick="showView('itin')">Itinerary</button>
+      <button id="tab-sleep" role="tab" aria-selected="false" onclick="showView('sleep')">Sleep</button>
       <button id="tab-budget" role="tab" aria-selected="false" onclick="showView('budget')">Budget</button>
       <button id="tab-pack" role="tab" aria-selected="false" onclick="showView('pack')">Packing</button>
       <button id="tab-weather" role="tab" aria-selected="false" onclick="showView('weather')">Weather</button>
@@ -560,6 +591,14 @@
       <input type="file" id="restoreFile" accept="application/json,.json" style="display:none">
     </div>
     <div id="days"></div>
+  </section>
+
+  <!-- SLEEP -->
+  <section class="view" id="view-sleep">
+    <div class="note-banner" style="background:var(--accent-soft);border-color:#ecd9cd;color:#7a3a1f">
+      A rest plan built from Jasslyn’s itinerary. Switzerland runs <b>6h behind KL</b>, so early starts feel easy and evenings feel late — and the red-eye lands straight into a full Pilatus day, so banking sleep on the flight matters most.
+    </div>
+    <div id="sleep"></div>
   </section>
 
   <!-- BUDGET -->
@@ -1657,9 +1696,95 @@ function renderGuide(){
   document.getElementById('guide').innerHTML = entry+gAround()+swiss+stops+countdown;
 }
 
+/* ============================= RENDER: sleep ============================= */
+const SLP_NIGHTS=[
+ {d:'12→13 Jun',loc:'Lucerne',bed:'21:30',wake:'05:00',hrs:'~7.5h',note:'After the red-eye + a full Pilatus day, crash early — Stoos needs a 05:30 breakfast / 06:06 first train. The toughest night of the trip.',tag:'tight'},
+ {d:'13→14 Jun',loc:'Lucerne',bed:'22:00',wake:'07:30',hrs:'~9h',note:'Long Stoos + Rigi day ending with the sunset cruise — sleep in before the relaxed Lungern transfer.',tag:'recovery'},
+ {d:'14→15 Jun',loc:'Grindelwald',bed:'22:00',wake:'07:00',hrs:'~9h',note:'You should be settling onto Swiss time. Spa-hotel night — wind down in the spa.'},
+ {d:'15→16 Jun',loc:'Interlaken',bed:'22:30',wake:'07:30',hrs:'~8h',note:'First of three Interlaken nights; easy 08:30 start for Lauterbrunnen.'},
+ {d:'16→17 Jun',loc:'Interlaken',bed:'22:30',wake:'07:30',hrs:'~8h',note:'Fully on Swiss time now.'},
+ {d:'17→18 Jun',loc:'Interlaken',bed:'22:30',wake:'07:30',hrs:'~8h',note:'Last Interlaken night — restful before the scenic rail to Zermatt.'},
+ {d:'18→19 Jun',loc:'Zermatt',bed:'22:30',wake:'05:45',hrs:'~7h',note:'Matterhorn sunset runs late (~21:50) but you’re up for the 07:00 first cogwheel — keep the evening efficient.',tag:'tight'},
+ {d:'19→20 Jun',loc:'Zermatt',bed:'22:00',wake:'07:30',hrs:'~9.5h',note:'Big Gornergrat + 5-Lakes day; the next morning’s Montreux train is relaxed, so sleep in.',tag:'sleepin'},
+ {d:'20→21 Jun',loc:'Montreux',bed:'21:30',wake:'05:00',hrs:'~7.5h',note:'Flight day — early Geneva-airport train (06:50), be at GVA ~3h before. Bed right after dinner.',tag:'tight'}
+];
+const SLP_REDEYE=[
+ {day:'11 Jun 21:55',ic:'plane',s:'KLIA → Abu Dhabi · EY487',dur:'~6h 55m',t:'Sleep the whole way — you land into a full Pilatus day with no hotel rest. Eye mask + earplugs, aim for 5h.',sleep:true},
+ {day:'00:50',ic:'clock',s:'Connect at Abu Dhabi',dur:'~1h 35m',t:'Short hop between gates — stay drowsy, hydrate, don’t fully wake up.'},
+ {day:'02:25',ic:'plane',s:'Abu Dhabi → Zürich · EY143',dur:'~6h 35m',t:'Keep sleeping — land 07:00 and go straight to Lucerne + Pilatus. A nap on the ZRH→Luzern train helps too.',sleep:true}
+];
+const SLP_WATCH=[
+ {day:'21 Jun',ic:'plane',s:'Geneva → Abu Dhabi flight · EY146',dur:'~6h 15m',t:'Daytime — your main reading / YouTube window. Stay mostly awake; one short nap.'},
+ {day:'14 Jun',ic:'train',s:'Lungern → Grindelwald',dur:'~1h 50m',t:'Brünig Pass RegioExpress — part scenic (sit RIGHT for the Eiger), part screen time.'},
+ {day:'20 Jun',ic:'train',s:'Zermatt → Montreux',dur:'~3h 15m',t:'Scenic rail — screens fine until Lausanne, then watch the window as Lake Geneva opens up.'}
+];
+const SLP_SLEEPLEG=[
+ {day:'11→12 Jun',ic:'plane',s:'KLIA → Abu Dhabi → Zürich',dur:'~13h flying',t:'Both legs are overnight — sleep as much as you can; the arrival day has no rest built in.',sleep:true},
+ {day:'21 Jun',ic:'plane',s:'Abu Dhabi → Kuala Lumpur · EY488',dur:'~7h 25m',t:'Departs 21:00 — overnight, sleep right through. Lands KLIA 08:25 (22 Jun).',sleep:true}
+];
+const SLP_SCENIC=[
+ {day:'12 Jun',ic:'boat',s:'Luzern → Alpnachstad lake steamer',dur:'~1h 30m',t:'Paddle-steamer across Lake Lucerne — eyes up, not on a screen.'},
+ {day:'13 Jun',ic:'boat',s:'Weggis → Luzern sunset cruise',dur:'~40 min',t:'Golden hour with the Chapel Bridge lit on arrival.'},
+ {day:'17 Jun',ic:'boat',s:'Lakes Brienz + Thun by boat (all day)',dur:'several hops',t:'Iseltwald, Brienz, Spiez — the scenery is the point.'},
+ {day:'18 Jun',ic:'train',s:'Visp → Zermatt (MGB)',dur:'~1h 20m',t:'Rhône Valley climb, first Matterhorn glimpse on arrival.'},
+ {day:'19 Jun',ic:'train',s:'Zermatt → Gornergrat cogwheel',dur:'33 min',t:'Sit RIGHT for the Matterhorn — best light on the first train.'}
+];
+function slpNight(o){
+  const lbl={tight:'Guard it',recovery:'Recovery',sleepin:'Sleep in'}[o.tag];
+  return `<div class="slp-row">
+    <div class="slp-main">
+      <div class="nm">${o.d} · ${o.loc}</div>
+      <div class="bw">${svg('bed')} ${to12h(o.bed)} → ${to12h(o.wake)}</div>
+      <div class="nt">${to12h(o.note)}</div>
+    </div>
+    <div class="slp-side"><div class="slp-hrs">${o.hrs}</div>${lbl?`<span class="slp-tag ${o.tag==='sleepin'?'sleepin':o.tag}">${lbl}</span>`:''}</div>
+  </div>`;
+}
+function slpLeg(o){
+  return `<div class="slp-tw${o.sleep?' sleep':''}">
+    <span class="ic">${svg(o.ic)}</span>
+    <div><div class="nm"><span class="dd">${to12h(o.day)} · </span>${o.s}</div><div class="dt">${to12h(o.t)}</div></div>
+    <div class="dur">${o.dur}</div>
+  </div>`;
+}
+function renderSleep(){
+  const intro = gsec('info','How your body clock shifts',
+    `<div class="slp-intro">Jasslyn flies <b>KL (UTC+8) → Switzerland (UTC+2)</b> — Switzerland runs <b>6 hours behind home</b>. Heading west is the gentler direction, but it has a clear pattern in the first days:</div>
+     <div class="slp-tz">
+       <div class="tz"><b>UTC+8</b><span>Malaysia · home</span></div>
+       <div class="tz"><b>UTC+4</b><span>Abu Dhabi · layover</span></div>
+       <div class="tz"><b>UTC+2</b><span>Switzerland</span></div>
+     </div>
+     ${gline('do','<b>Early mornings feel easy.</b> Waking 05:30 in Switzerland = 11:30 back home — body wide awake. The early starts (Stoos, Gornergrat, the flight home) line up with jet lag.')}
+     ${gline('dont','<b>Evenings are the enemy.</b> A 19:30 dinner = 01:30 KL. The first 2–3 nights you’ll get sleepy early — go to bed when it hits.')}
+     ${gline('tip','<b>Goal:</b> be fully on Swiss time by Grindelwald / Interlaken (15–16 Jun).')}`);
+  const redeye = gsec('plane','The outbound red-eye — sleep is non-negotiable',
+    `<div class="slp-intro">You land Zürich 07:00 and go straight to Lucerne + Mt Pilatus — there’s <b>no hotel rest on arrival day</b>. Sleeping on both flights is what makes day 1 survivable.</div>`
+    + SLP_REDEYE.map(slpLeg).join(''));
+  const nights = gsec('bed','Night-by-night plan',
+    `<div class="slp-intro">Target <b>bed → wake</b> times that follow each day’s first activity. Tags flag the nights to guard and the ones to sleep in.</div>`
+    + SLP_NIGHTS.map(slpNight).join(''));
+  const watch = gsec('eye','Transit time to read / watch YouTube',
+    `<div class="slp-intro">This trip is mostly <i>scenic</i> transit — fewer pure-screen windows than a city trip. The genuine sit-and-watch stretches:</div>`
+    + SLP_WATCH.map(slpLeg).join(''));
+  const sleepleg = gsec('bed','Use these legs for sleep, not screens',
+    SLP_SLEEPLEG.map(slpLeg).join(''));
+  const scenic = gsec('boat','Window-seat legs — save the screen',
+    `<div class="slp-intro">Beautiful rides where the view is the whole point — look up, not down.</div>`
+    + SLP_SCENIC.map(slpLeg).join(''));
+  const tips = gsec('bulb','Sleep tips for this trip',
+    [gline('tip','<b>Sleep hard on the outbound flights</b> — arrival day jumps straight into Mt Pilatus with no nap built in.'),
+     gline('tip','<b>Use the spa nights</b> (Grindelwald, Zermatt) to wind down — a warm soak before bed helps you drop off.'),
+     gline('tip','<b>Cap naps at 30–45 min</b> and none after ~17:00, or the early-start nights get harder.'),
+     gline('do','<b>Three nights to protect:</b> 12→13 (Stoos after the red-eye), 18→19 (late Matterhorn sunset + 07:00 cogwheel) and 20→21 (early flight home). Keep those evenings short.'),
+     gline('gen','Caffeine cut-off ~14:00 on the tight nights; hydrate on flights — dry cabins wreck sleep quality.')
+    ].join(''));
+  document.getElementById('sleep').innerHTML = intro+redeye+nights+watch+sleepleg+scenic+tips;
+}
+
 /* ============================= VIEWS / NAV ============================= */
 function showView(v){
-  ['itin','budget','pack','weather','guide'].forEach(x=>{
+  ['itin','sleep','budget','pack','weather','guide'].forEach(x=>{
     document.getElementById('view-'+x).classList.toggle('on',x===v);
     document.getElementById('tab-'+x).setAttribute('aria-selected',x===v);
   });
@@ -1699,6 +1824,7 @@ renderBudget();
 renderFoodPrices();
 renderPack();
 renderGuide();
+renderSleep();
 renderWeather();
 renderDayStrip();
 setStick();
