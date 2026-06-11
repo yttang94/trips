@@ -1,0 +1,1680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!--
+===============================================================================
+  TRAVEL COMPANION  ·  GUIDE FOR YOUR AI EDITOR (and you)
+  Read this before changing anything. It explains what is safe to edit and the
+  few rules that keep the app working and keep the user's saved data intact.
+===============================================================================
+
+  HOW IT'S BUILT
+  • One self-contained file. No build step, no server. Open it in a browser; it
+    works offline and saves the user's edits in that browser (localStorage).
+  • Everything you should change is plain DATA arrays near the top of <script>.
+    The code beneath them (functions named render*, effTime, reflow*, migrate*)
+    is the ENGINE. EDIT THE DATA. Leave the engine alone unless you truly intend
+    to change behaviour.
+
+  THE DATA (top of the <script> block)
+  • DAYS      the itinerary: each day, and each stop in it (time, title, detail,
+              place, etc.). This is the spine of the app.
+  • BUDGET    every fixed cost (flights, stays, trains, tickets). The single
+              source of truth for costs.
+  • ENRICH    optional "Why go and timing" panels, keyed by a stop's title.
+  • OPENINFO  optional opening-hours / caution chip, keyed by a stop's title.
+  • WEATHER, PACKING, GUIDE, DAYBASE, RATE  the other tabs and helpers; all data.
+
+  THE FOUR TABS (what the END USER does in the app)
+  • Itinerary  the day-by-day plan. The user can edit a stop's TIME and DURATION,
+               add a NOTE, and type a SPEND amount, unless the stop is locked.
+  • Budget     every cost. Food rows are generated automatically from the
+               itinerary; fixed costs come from the BUDGET list.
+  • Packing / Guide  checklists and reference text.
+
+  HOW EDITS FLOW BETWEEN PAGES  (the part people get wrong)
+  • MEAL / FOOD spend: typed on EITHER page and synced both ways. It starts as an
+    auto estimate (see MEALEST) and is saved against the stop. Editable in both.
+  • FIXED COSTS (tickets, trains, stays): defined ONCE in BUDGET. A budget line is
+    wired to a stop by its `itin:` value, which must EXACTLY equal that stop's
+    `title:`. The cost then also appears on that itinerary row.
+        paid:true   the cost is LOCKED (shows "paid", non-editable on both pages)
+        paid:false  the cost is editable on both pages, and stays in sync.
+  • TIMING is NOT in the budget. A stop's time lives in DAYS (its `t:`). Adding
+    `lock:true` to a stop marks it a confirmed ticket: the time becomes
+    non-editable (shows a small lock) and is shielded from auto-shifting. So:
+    a booked ticket = BUDGET line with paid:true (locks the cost)  PLUS  the
+    matching DAYS stop with lock:true (locks the time).
+
+  THE GOLDEN RULES (break these and the user loses saved data)
+  1. A stop's `title:` is its IDENTITY. Notes, time edits and spend are saved
+     against it. Prefer editing `detail:` over renaming `title:`. If you must
+     rename a title, add [dayIndex,'old title','new title'] to KEY_RENAMES.
+  2. A budget line's `id:` is ITS identity. The typed amount and paid state are
+     saved against it. Keep ids stable and unique; if one changes, add
+     ['old-id','new-id'] to ID_RENAMES.
+  3. A budget line's `itin:` must EXACTLY match the target stop's `title:`.
+  4. Anything the user types in the app ALWAYS wins over the file. Editing wording
+     or numbers in the file never overwrites their entries. Never clear a saved
+     value unless asked.
+
+  STARTING A BRAND-NEW TRIP (replacing all the data)?
+  • You are rebuilding DAYS and BUDGET from scratch in a fresh browser, so there
+    is no saved user data to protect. In that case you may EMPTY the KEY_RENAMES
+    and ID_RENAMES lists and ignore the rename rules; they only matter once the
+    user has typed things in and you later edit the file.
+  • Set RATE (each currency to the home currency) and every day's `cc:` (country
+    codes) so totals convert correctly. Keep every budget `id:` unique, and keep
+    each `itin:` equal to the stop `title:` it points at.
+===============================================================================
+-->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1f1b16" />
+<title>Switzerland 2026 · 12–21 June</title>
+<style>
+  :root{
+    --bg:#f6f2ec; --paper:#fffdf9; --ink:#211c16; --muted:#6f665a; --faint:#9a9082;
+    --line:#e7ded1; --line2:#efe8dc;
+    --accent:#b4532a;        /* terracotta */
+    --accent-soft:#f3e4da;
+    --ok:#3f6b4f;            /* booked / paid (sage) */
+    --ok-soft:#e3efe6;
+    --warn:#b07a12;          /* to-book / deciding (amber) */
+    --warn-soft:#f6ecd4;
+    --alert:#a83b2b;         /* conflicts */
+    --alert-soft:#f7e3df;
+    --it1:#2e8b57; --it2:#cf3030;  /* italy stripes */
+    --radius:16px;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--sans); color:var(--ink); background:var(--bg);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  a{color:inherit}
+  /* Base icon size: every inline SVG defaults to 1em and never stretches.
+     Class rules like `.chip svg{width:13px}` have higher specificity and still win.
+     Without this, an SVG with a viewBox but no width/height fills its container. */
+  svg{width:1em; height:1em; flex:none; vertical-align:-.125em}
+  .wrap{max-width:760px; margin:0 auto; padding:0 16px}
+
+  /* ---------- Top bar ---------- */
+  header.top{
+    position:sticky; top:0; z-index:40; background:rgba(33,28,22,.92);
+    backdrop-filter:saturate(150%) blur(10px); color:#f6f2ec;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    padding:calc(env(safe-area-inset-top) + 10px) 0 0;
+  }
+  .top .wrap{padding-bottom:10px}
+  .brand{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+  .brand h1{font-size:18px; letter-spacing:-.02em; margin:0; font-weight:650}
+  .brand .sub{font-size:12px; color:#ccbfae; font-variant-numeric:tabular-nums}
+  .switch{display:flex; gap:4px; margin-top:10px; background:rgba(255,255,255,.07);
+    padding:4px; border-radius:12px; width:100%}
+  .switch button{
+    flex:1; appearance:none; border:0; background:transparent; color:#cfc3b2;
+    font:inherit; font-size:12.5px; font-weight:600; padding:8px 4px; border-radius:9px;
+    cursor:pointer; transition:transform .12s ease, background .18s ease, color .18s ease;
+  }
+  .switch button[aria-selected="true"]{background:var(--accent); color:#fff}
+  .switch button:active{transform:scale(.97)}
+
+  /* ---------- Day strip ---------- */
+  .daystrip{position:sticky; top:var(--stick,118px); z-index:30; background:var(--bg);
+    border-bottom:1px solid var(--line); margin-bottom:14px}
+  .daystrip .scroll{display:flex; gap:7px; overflow-x:auto; padding:10px 16px;
+    scrollbar-width:none; -ms-overflow-style:none}
+  .daystrip .scroll::-webkit-scrollbar{display:none}
+  .daychip{flex:0 0 auto; border:1px solid var(--line); background:var(--paper);
+    border-radius:11px; padding:6px 10px; min-width:50px; text-align:center; cursor:pointer;
+    transition:transform .12s ease, border-color .18s ease}
+  .daychip:active{transform:translateY(1px)}
+  .daychip .d{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+  .daychip .n{font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+  .daychip.active{border-color:var(--accent); background:var(--accent-soft)}
+  .daychip.active .n{color:var(--accent)}
+
+  section.view{display:none}
+  section.view.on{display:block}
+  .pad{padding-bottom:60px}
+
+  /* ---------- Overview / legs ---------- */
+  .overview{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; margin-bottom:16px}
+  .overview h2{margin:0 0 4px; font-size:13px; letter-spacing:.02em; text-transform:uppercase; color:var(--muted)}
+  .stat-row{display:flex; gap:18px; margin-top:8px; flex-wrap:wrap}
+  .stat{display:flex; flex-direction:column}
+  .stat .v{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+  .stat .k{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+  .legs{display:flex; gap:8px; overflow-x:auto; padding:12px 16px 4px; scrollbar-width:none}
+  .legs::-webkit-scrollbar{display:none}
+  .leg{flex:0 0 auto; background:var(--paper); border:1px solid var(--line); border-radius:12px;
+    padding:9px 11px; min-width:130px}
+  .leg .route{display:flex; align-items:center; gap:6px; font-weight:650; font-size:13px}
+  .leg .ico{color:var(--accent); display:inline-flex}
+  .leg .t{font-size:11px; color:var(--muted); margin-top:3px; font-variant-numeric:tabular-nums}
+
+  /* ---------- Day card ---------- */
+  .day{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
+    margin-bottom:16px; scroll-margin-top:170px}
+  .day-head{padding:14px 16px 12px; border-bottom:1px solid var(--line2);
+    display:flex; align-items:flex-start; gap:10px;
+    position:sticky; top:var(--stick2,172px); z-index:8; background:var(--paper); border-radius:var(--radius) var(--radius) 0 0}
+  .flags{display:flex; gap:3px; margin-top:3px}
+  .flag{width:18px; height:13px; border-radius:2px; border:1px solid rgba(0,0,0,.08); overflow:hidden; flex:0 0 auto}
+  .flag.it{background:linear-gradient(90deg,#2e8b57 33%,#fff 33% 66%,#cf3030 66%)}
+  .flag.ch{background:#d52b1e; position:relative}
+  .flag.ch::after{content:""; position:absolute; inset:0; background:
+     linear-gradient(#fff,#fff) center/8px 2.4px no-repeat,
+     linear-gradient(#fff,#fff) center/2.4px 8px no-repeat}
+  .flag.fr{background:linear-gradient(90deg,#2747a0 33%,#fff 33% 66%,#cf3030 66%)}
+  .flag.my{background:repeating-linear-gradient(#cc0001 0 1.8px,#fff 1.8px 3.6px)}
+  .flag.ae{background:linear-gradient(#00843d 33%,#fff 33% 66%,#000 66%)}
+  .day-head .meta{flex:1; min-width:0}
+  .day-head .dt{font-size:12px; color:var(--accent); font-weight:650; letter-spacing:.02em}
+  .day-head .ttl{font-size:18px; font-weight:700; letter-spacing:-.02em; margin:1px 0 0}
+  .day-head .sm{font-size:12.5px; color:var(--muted); margin-top:2px}
+
+  /* timeline */
+  .tl{padding:6px 16px 4px}
+  .item{display:grid; grid-template-columns:26px 1fr 84px 78px; gap:8px; padding:9px 0; position:relative}
+  .tlhead{display:grid; grid-template-columns:26px 1fr 84px 78px; gap:8px; padding:2px 0 6px}
+  .tlhead .thr{text-align:right; font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--faint)}
+  .idur{align-self:start; text-align:right; padding-top:3px; font-size:11px; line-height:1.3; color:var(--accent); font-variant-numeric:tabular-nums}
+  .idur svg{width:11px; height:11px; vertical-align:-1px; margin-right:2px}
+  .idur small{display:block; color:var(--muted); font-size:10px; margin-top:1px}
+  .item.transit .idur{color:#4b5563}
+  .idur.ed{display:flex; flex-direction:column; align-items:flex-end; gap:1px}
+  .durrow{display:inline-flex; align-items:center; gap:2px; justify-content:flex-end; max-width:100%}
+  .duredit{font-family:var(--sans); font-size:11px; font-weight:600; color:inherit; background:#fff;
+    border:1px solid var(--line); border-radius:5px; padding:1px 1px; -webkit-appearance:none; appearance:none; cursor:pointer; max-width:40px}
+  .duredit:focus{outline:1px solid var(--accent)}
+  .durrow{gap:3px}
+  .icost{align-self:start; text-align:right; font-family:var(--mono); font-size:12px; font-weight:700; padding-top:3px; line-height:1.25}
+  .icost small{display:block; font-family:var(--sans); font-size:9px; font-weight:600; letter-spacing:.02em; opacity:.85; margin-top:1px; line-height:1.2}
+  .icost.paid{color:var(--ok)} .icost.tobook{color:var(--warn)} .icost.est{color:#9a9082}
+  .icost.ed{display:flex; flex-direction:column; align-items:flex-end; gap:1px}
+  .amtwrap{display:inline-flex; align-items:center; gap:2px}
+  .rmx{font-family:var(--sans); font-size:9px; font-weight:700; color:var(--muted)}
+  .amtedit{width:50px; font-family:var(--mono); font-size:12px; font-weight:700; color:inherit; background:#fff;
+    border:1px solid var(--line); border-radius:6px; padding:1px 4px; text-align:right;
+    -webkit-appearance:none; -moz-appearance:textfield; appearance:none}
+  .amtedit::-webkit-outer-spin-button,.amtedit::-webkit-inner-spin-button{-webkit-appearance:none; margin:0}
+  .brow .amt b .amtedit{width:62px; font-size:14px}
+  .icost.empty .amtedit{border-style:dashed; background:transparent; color:var(--faint)}
+  .icost.empty .rmx{color:var(--faint)}
+  .amtedit.pos::placeholder{color:var(--faint); font-weight:700}
+  .time.fixed{opacity:.9} .time.fixed svg{width:10px; height:10px; margin-left:3px; opacity:.5; vertical-align:0}
+  .linked{font-size:9.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); border-radius:5px; padding:0 5px; margin-left:5px; white-space:nowrap}
+  .daytotal{display:flex; justify-content:flex-end; align-items:baseline; gap:8px; flex-wrap:wrap;
+    padding:10px 16px; border-top:1px solid var(--line2); font-size:11.5px; color:var(--muted)}
+  .daytotal b{font-family:var(--mono); font-size:13px; color:var(--ink)}
+  .daytotal .dt-nat{font-family:var(--mono); font-weight:700; color:var(--ink); margin-right:8px}
+  .daytotal .p{color:var(--ok); font-weight:700} .daytotal .u{color:var(--warn); font-weight:700}
+  .item + .item{border-top:1px solid var(--line2)}
+  .rail{display:flex; flex-direction:column; align-items:center; padding-top:2px}
+  .rail .dot{width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent); flex:0 0 auto}
+  .item.transit .dot{background:#eef0f2; color:#4b5563; border-radius:50%}
+  .item.warn .dot{background:var(--alert-soft); color:var(--alert)}
+  .item.meal .dot{background:#f1ece2; color:#7a6a4a}
+  .item.buffer .dot{background:#eef1ec; color:#5c6b58}
+  .body .line1{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap}
+  .time{font-family:var(--mono); font-size:12px; color:var(--accent); font-weight:600; flex:0 0 auto}
+  .item.transit .time{color:#4b5563}
+  .tedit{flex:0 0 auto; font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent);
+    background:var(--accent-soft); border:1px solid #ecd9cd; border-radius:7px; padding:1px 5px; cursor:pointer; -webkit-appearance:none; appearance:none; min-width:0}
+  .tedit::-webkit-calendar-picker-indicator{opacity:.4; cursor:pointer; margin-left:2px}
+  .item.transit .tedit{color:#4b5563; background:#eef0f2; border-color:#e0e3e6}
+  .tspent{margin-left:auto; display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600;
+    color:var(--accent); white-space:nowrap; font-variant-numeric:tabular-nums; flex:0 0 auto}
+  .tspent svg{width:12px; height:12px}
+  .item.transit .tspent{color:#4b5563}
+  .resetbtn{font:inherit; font-size:12px; font-weight:600; color:var(--muted); background:var(--paper);
+    border:1px solid var(--line); border-radius:8px; padding:5px 11px; cursor:pointer}
+  .resetbtn:active{transform:translateY(1px)}
+  .ttl2{font-weight:600; font-size:14.5px; letter-spacing:-.01em}
+  .item.warn .ttl2{color:var(--alert)}
+  .detail{font-size:13px; color:var(--muted); margin-top:3px}
+  .hop{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:var(--muted);
+    background:#f1ede6; border:1px solid var(--line); border-radius:999px; padding:2px 8px; margin-bottom:7px; font-variant-numeric:tabular-nums}
+  .hop svg{width:12px; height:12px; color:var(--accent)}
+  .chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center}
+  .chip{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600;
+    padding:3px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); background:#fff;
+    font-variant-numeric:tabular-nums}
+  .chip.dur{border-color:var(--accent-soft); background:var(--accent-soft); color:var(--accent)}
+  .chip.fare{border-color:#e3e6e9; background:#f3f5f7; color:#475569}
+  .notebtn{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600; padding:3px 8px; border-radius:999px; border:1px dashed var(--line); color:var(--muted); background:#fff; cursor:pointer}
+  .notebtn svg{width:13px; height:13px}
+  .notebtn:active{transform:translateY(1px)}
+  .movegrp{display:inline-flex; gap:3px}
+  .movebtn{width:24px; height:24px; border:1px solid var(--line); background:#fff; border-radius:7px; color:var(--muted); font-size:13px; font-weight:700; line-height:1; cursor:pointer; padding:0}
+  .movebtn:active{transform:translateY(1px)}
+  .sortbtn{margin-left:auto; flex:none; align-self:flex-start; font:inherit; font-size:11px; font-weight:600; color:var(--muted); background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:4px 8px; cursor:pointer; white-space:nowrap}
+  .sortbtn:active{transform:translateY(1px)}
+  .usernote{display:flex; align-items:flex-start; gap:7px; margin-top:7px; font-size:12.5px; line-height:1.45; color:#7a5a12; background:#fffaf0; border:1px solid #efe2c4; border-radius:8px; padding:6px 9px}
+  .usernote svg{width:13px; height:13px; margin-top:2px; color:var(--warn); flex:none}
+  .usernote .ne{margin-left:auto; border:0; background:transparent; color:var(--faint); font:inherit; font-size:11px; cursor:pointer; flex:none}
+  .usernote .utext{white-space:pre-wrap; word-break:break-word; flex:1; min-width:0}
+  /* multi-line note editor modal */
+  .note-modal{position:fixed; inset:0; z-index:100; background:rgba(33,28,22,.45); display:flex; align-items:center; justify-content:center; padding:18px}
+  .note-box{background:var(--paper); border:1px solid var(--line); border-radius:14px; width:100%; max-width:460px; padding:14px; box-shadow:0 10px 34px rgba(0,0,0,.28)}
+  .note-h{font-size:12px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:9px}
+  .note-ta{width:100%; font:inherit; font-size:14px; line-height:1.5; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px; resize:vertical; min-height:104px; box-sizing:border-box}
+  .note-ta:focus{outline:2px solid var(--accent); outline-offset:0}
+  .note-hint{font-size:11px; color:var(--faint); margin-top:6px}
+  .note-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:10px}
+  .note-actions button{font:inherit; font-size:13px; font-weight:650; border-radius:9px; padding:8px 14px; cursor:pointer; border:1px solid var(--line); background:var(--paper); color:var(--ink)}
+  .note-actions button:active{transform:translateY(1px)}
+  .note-actions .note-save{background:var(--accent); color:#fff; border-color:var(--accent)}
+  .chip.travel{border-color:#e3e6e9; background:#f3f5f7; color:#475569}
+  .chip svg{width:13px; height:13px}
+  .maplink{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600;
+    padding:3px 8px; border-radius:999px; border:1px solid var(--line); color:var(--ink); background:#fff;
+    text-decoration:none; transition:transform .1s ease, background .15s}
+  .maplink:active{transform:translateY(1px)}
+  .maplink svg{width:13px;height:13px; color:var(--accent)}
+
+  /* status toggle button */
+  .status{appearance:none; font:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:5px;
+    font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:999px; border:1px solid transparent;
+    transition:transform .1s ease}
+  .status:active{transform:scale(.96)}
+  .status svg{width:13px; height:13px}
+  .status.booked{background:var(--ok-soft); color:var(--ok); border-color:#cbe2d1}
+  .status.tobook{background:var(--warn-soft); color:var(--warn); border-color:#ecddb6}
+  .status.deciding{background:var(--warn-soft); color:var(--warn); border-color:#ecddb6; border-style:dashed}
+
+  /* stay strip */
+  .stay{margin:2px 16px 14px; border:1px solid var(--line); border-radius:12px; padding:11px 12px;
+    background:linear-gradient(180deg,#fffdf9,#fbf7f0)}
+  .stay .row{display:flex; align-items:center; gap:8px}
+  .stay .nm{font-weight:650; font-size:14px}
+  .stay .nt{font-size:12px; color:var(--muted); margin-top:3px}
+  .stay .price{margin-left:auto; text-align:right; font-variant-numeric:tabular-nums}
+  .stay .price b{font-size:14px} .stay .price span{display:block; font-size:11px; color:var(--muted)}
+  .free-stay{color:var(--muted); font-size:13px; padding:0 16px 14px}
+
+  details.alt{margin:0 16px 14px; border:1px dashed var(--line); border-radius:12px; padding:0 12px}
+  details.alt summary{cursor:pointer; font-size:12.5px; font-weight:650; color:var(--muted); padding:10px 0; list-style:none}
+  details.alt summary::-webkit-details-marker{display:none}
+  details.alt[open] summary{border-bottom:1px solid var(--line2)}
+  .alt-row{display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--line2); font-size:13px}
+  .alt-row:last-child{border-bottom:0}
+  .alt-row .an{flex:1} .alt-row .ap{font-family:var(--mono); font-size:12px; color:var(--muted); text-align:right; white-space:nowrap}
+  .alt-row.booked .an{color:var(--ok); font-weight:650}
+
+  /* ---------- Budget ---------- */
+  .btotals{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px}
+  .bcard{background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:13px}
+  .bcard .k{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted)}
+  .bcard .v{font-size:21px; font-weight:750; font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin-top:3px; font-family:var(--mono)}
+  .bcard .v small{font-size:12px; font-weight:600; color:var(--muted)}
+  .bcard.full{grid-column:1/-1}
+  .bbar{height:8px; border-radius:999px; background:var(--warn-soft); overflow:hidden; margin-top:9px}
+  .bbar i{display:block; height:100%; background:var(--ok); border-radius:999px}
+  .bcat{margin-top:20px}
+  .bcat h3{position:sticky; top:var(--stick,118px); z-index:6; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    font-size:12.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:#fff;
+    margin:0 0 8px; padding:8px 12px; border-radius:9px; background:var(--accent); box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  .bcat h3 .bcat-sum{font-family:var(--mono); font-size:12px; font-weight:700; color:#fff; opacity:.92; letter-spacing:0}
+  .bd .btimeedit{font-family:var(--mono); font-size:11px; font-weight:700; color:var(--accent); border:1px solid var(--line); border-radius:6px; padding:1px 4px; margin-left:3px; background:#fff; cursor:pointer; vertical-align:middle}
+  .brow{display:grid; grid-template-columns:1fr auto; gap:6px 10px; align-items:center;
+    padding:11px 0; border-top:1px solid var(--line2)}
+  .brow:first-of-type{border-top:0}
+  .brow .bp{min-width:0}
+  .brow .bn{font-size:14px; font-weight:600}
+  .brow .bd{font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums}
+  .brow .bwhere{display:flex; align-items:flex-start; gap:4px; font-size:12px; color:var(--muted); margin-top:4px; line-height:1.35; word-break:break-word}
+  .brow .bwhere svg{width:12px; height:13px; color:var(--accent); flex:none; margin-top:1px}
+  .brow .amt{font-family:var(--mono); text-align:right; font-variant-numeric:tabular-nums}
+  .brow .amt b{font-size:14px} .brow .amt span{display:block; font-size:11px; color:var(--muted)}
+  .brow .amt .eur{color:var(--faint); font-size:11px}
+  .brow.struck .bn{color:var(--faint)}
+  /* phone readability: roomier rows, clearer name + location */
+  @media (max-width:480px){
+    .wrap{padding:0 13px}
+    .brow{padding:13px 0; gap:5px 9px}
+    .brow .bn{font-size:14.5px; line-height:1.32}
+    .brow .bd{font-size:12px}
+    .brow .bwhere{font-size:12.5px; color:#5f5648}
+    .brow .amt b{font-size:15px}
+    .bcat h3{font-size:12px; letter-spacing:.04em}
+    .linked{font-size:10px; padding:0 4px}
+  }
+
+  /* ---------- Packing ---------- */
+  .pcat{margin-bottom:8px; background:var(--paper); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+  .pcat > summary{cursor:pointer; list-style:none; padding:13px 14px; font-weight:650; font-size:14.5px;
+    display:flex; align-items:center; gap:8px}
+  .pcat > summary::-webkit-details-marker{display:none}
+  .pcat > summary .count{margin-left:auto; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; font-weight:600}
+  .pitem{display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-top:1px solid var(--line2); cursor:pointer}
+  .pitem .box{width:20px; height:20px; border-radius:6px; border:1.6px solid var(--line); flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; margin-top:1px; transition:.15s}
+  .pitem.done .box{background:var(--ok); border-color:var(--ok); color:#fff}
+  .pitem.done .lbl{color:var(--faint); text-decoration:line-through}
+  .pitem .lbl{font-size:14px}
+  .pitem .lbl small{display:block; color:var(--muted); font-size:11.5px; text-decoration:none}
+  .padd{display:flex; gap:8px; padding:10px 14px; border-top:1px solid var(--line2)}
+  .padd input{flex:1; border:1px solid var(--line); border-radius:9px; padding:8px 10px; font:inherit; font-size:14px; background:#fff}
+  .padd button{border:0; background:var(--accent); color:#fff; font:inherit; font-weight:650; border-radius:9px; padding:8px 12px; cursor:pointer}
+  .pitem .rm{margin-left:auto; color:var(--faint); border:0; background:transparent; cursor:pointer; padding:2px; font-size:16px; line-height:1}
+
+  /* ---------- Guide ---------- */
+  .gsec{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:14px 15px; margin-bottom:14px}
+  .gsec .gh{display:flex; align-items:center; gap:9px; margin-bottom:10px}
+  .gsec .gh .ic{width:30px; height:30px; border-radius:9px; background:var(--accent-soft); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto}
+  .gsec .gh h3{margin:0; font-size:16px; letter-spacing:-.01em}
+  .gline{display:grid; grid-template-columns:18px 1fr; gap:9px; padding:7px 0; font-size:13.5px}
+  .gline + .gline{border-top:1px solid var(--line2)}
+  .gline .gi{margin-top:2px; display:flex}
+  .gline b{font-weight:650}
+  .gi.do{color:var(--ok)} .gi.dont{color:var(--alert)} .gi.tip{color:var(--accent)} .gi.gen{color:var(--muted)}
+  .gline svg{width:16px;height:16px}
+  .gtwo{display:grid; grid-template-columns:1fr; gap:0}
+  .gsub{font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 2px; font-weight:700}
+  .gtag{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:650; color:var(--muted)}
+  .gtag .flag{width:20px;height:14px}
+  .ga-head{font-size:15px; font-weight:750; letter-spacing:-.01em; color:var(--ink); margin:4px 2px 8px}
+  .ga-primary{font-size:13px; color:var(--ink); line-height:1.55; margin:0 0 8px}
+  .ga-mode{display:grid; grid-template-columns:16px 1fr auto; gap:9px; align-items:start; padding:8px 0; border-top:1px solid var(--line2); font-size:12.5px}
+  .ga-mode:first-of-type{border-top:0}
+  .ga-mode .gm-ic{color:var(--accent); margin-top:2px}
+  .ga-mode .gm-name{font-weight:650}
+  .ga-mode .gm-note{display:block; color:var(--muted); margin-top:1px; line-height:1.45}
+  .ga-mode .gm-cost{font-family:var(--mono); font-size:11px; color:var(--muted); text-align:right; white-space:nowrap; padding-top:1px}
+  .ga-line{font-size:12px; color:var(--muted); line-height:1.5; margin-top:8px}
+  .ga-line b{color:var(--ink)}
+  .wpack{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
+  .wpill{font-size:11px; font-weight:600; color:var(--muted); background:#f1ede6; border:1px solid var(--line); border-radius:999px; padding:3px 8px}
+  .chip.open{border-color:#cbe2d1; background:var(--ok-soft); color:var(--ok)}
+  .opencaution{display:grid; grid-template-columns:15px 1fr; gap:7px; align-items:start; margin-top:7px;
+    font-size:11.5px; line-height:1.45; color:#7a5a12; background:var(--warn-soft); border:1px solid #ecddb6; border-radius:9px; padding:7px 9px}
+  .opencaution svg{width:13px; height:13px; margin-top:2px; color:var(--warn)}
+  .gcount-head{display:flex; align-items:baseline; gap:8px}
+  .gcount-head .when{margin-left:auto; font-size:11.5px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.04em}
+
+  /* route map */
+  .rmap{width:100%; height:auto; display:block; font-family:var(--sans); margin:6px 0 4px;
+    background:#fbf7f0; border:1px solid var(--line); border-radius:12px}
+  .rmap-note{font-size:11px; color:var(--faint); line-height:1.5; margin:2px 2px 0}
+  .rmap-wrap{position:relative}
+  .rmap-zoom{position:absolute; right:9px; bottom:9px; display:flex; flex-direction:column; gap:6px}
+  .rmap-zoom button{width:32px; height:32px; border-radius:9px; border:1px solid var(--line); background:rgba(255,253,249,.95);
+    color:var(--ink); font-size:18px; font-weight:700; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,.08); -webkit-tap-highlight-color:transparent}
+  .rmap-zoom button:active{transform:translateY(1px)}
+  .legslist{display:grid; margin:6px 0 2px}
+  .lrow{display:grid; grid-template-columns:26px 1fr; gap:11px; align-items:center; padding:9px 0; border-top:1px solid var(--line2)}
+  .lrow:first-child{border-top:0}
+  .lbadge{width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff; font-weight:800;
+    font-size:12px; display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums}
+  .lbadge.fly{background:#eef0f2; color:#4b5563}
+  .lbadge svg{width:14px; height:14px}
+  .lroute{font-weight:650; font-size:14px}
+  .larr{color:var(--accent)}
+  .lmeta{font-size:12px; color:var(--muted); display:flex; align-items:center; gap:5px; margin-top:2px; font-variant-numeric:tabular-nums}
+  .lmeta svg{width:13px; height:13px; color:var(--accent)}
+  .ltrip{font-size:12px; color:var(--muted); padding:9px 0 0; margin-top:2px; border-top:1px solid var(--line2);
+    display:flex; flex-wrap:wrap; gap:3px 6px; align-items:center}
+  .ltrip svg{width:13px; height:13px; color:var(--accent)}
+
+  /* expandable 'why go & timing' (my recommendations) */
+  .why{margin-top:9px; border:1px solid var(--accent-soft); border-radius:11px; background:#fffaf6; overflow:hidden}
+  .why>summary{cursor:pointer; list-style:none; padding:8px 11px; font-size:12.5px; font-weight:700; color:var(--accent);
+    display:flex; align-items:center; gap:7px}
+  .why>summary::-webkit-details-marker{display:none}
+  .why>summary svg{width:15px; height:15px}
+  .why>summary::after{content:"›"; margin-left:auto; transition:transform .2s ease; font-size:16px; line-height:1}
+  .why[open]>summary::after{transform:rotate(90deg)}
+  .why .wbody{padding:0 12px 12px}
+  .why .wstory{font-size:13px; line-height:1.6; color:var(--ink); margin:2px 0 4px}
+  .why .wsub{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:800; margin:11px 0 5px}
+  .why .look{display:grid; gap:5px}
+  .why .look>div{display:grid; grid-template-columns:15px 1fr; gap:8px; font-size:12.5px; color:var(--muted); line-height:1.45}
+  .why .look>div svg{width:13px; height:13px; color:var(--accent); margin-top:3px}
+  .why .bd{display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:5px 0; border-top:1px dashed var(--line2)}
+  .why .bd:first-of-type{border-top:0}
+  .why .bd .bt{color:var(--ink)}
+  .why .bd .bv{font-family:var(--mono); color:var(--accent); font-weight:600; white-space:nowrap}
+  .why .take{margin-top:10px; font-size:12.5px; line-height:1.55; background:var(--accent-soft); color:#7a3a1f; border-radius:9px; padding:8px 10px}
+
+  /* your-plan vs my-picks key */
+  .keylegend{background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:11px 12px; margin-bottom:10px; display:grid; gap:9px}
+  .kl-row{display:grid; grid-template-columns:auto 1fr; gap:9px; align-items:start; font-size:12.5px; color:var(--muted); line-height:1.45}
+  .kl-tag{font-size:11px; font-weight:800; padding:3px 8px; border-radius:999px; white-space:nowrap}
+  .kl-tag.your{background:#eceae6; color:#5b5347}
+  .kl-tag.rec{background:var(--accent-soft); color:var(--accent)}
+
+  /* food prices (Budget tab) */
+  .fpcard{background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:4px 14px}
+  .fpd{display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; padding:9px 0; border-top:1px solid var(--line2)}
+  .fpd:first-of-type{border-top:0}
+  .fpd-main{min-width:0}
+  .fpd-place{display:flex; align-items:center; gap:7px; font-weight:650; font-size:14px}
+  .fpd-place .flag{width:18px; height:13px}
+  .fpd-date{font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:2px}
+  .fpd-cost{text-align:right; font-family:var(--mono); font-size:13px; font-weight:700; color:var(--ink); white-space:nowrap}
+  .fpd-cost small{display:block; font-family:var(--sans); font-size:10px; font-weight:600; color:var(--muted); margin-top:1px}
+  .fpd-total{border-top:2px solid var(--line); margin-top:2px}
+  .fpd-total .fpd-place{color:var(--accent)}
+  .fp-avg{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:2px 0 10px}
+  .fp-avg .fp-k{display:block; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:700}
+  .fp-avg .fp-v{font-size:13px; font-weight:650; color:var(--ink)}
+  .fp-row{display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-top:1px solid var(--line2); font-size:12.5px}
+  .fp-row:first-of-type{border-top:0}
+  .fp-row .fp-p{font-family:var(--mono); font-size:12px; color:var(--muted); white-space:nowrap; text-align:right}
+
+  /* legend / footer */
+  .legend{display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 18px; font-size:11px; color:var(--muted)}
+  .legend .status{cursor:default}
+  footer{color:var(--faint); font-size:11.5px; text-align:center; padding:24px 16px 40px; line-height:1.6}
+  .note-banner{background:var(--alert-soft); border:1px solid #eccabf; color:#7c2d1c; border-radius:12px;
+    padding:10px 12px; font-size:12.5px; margin-bottom:14px}
+  .hint{font-size:11.5px; color:var(--faint); text-align:center; margin:-4px 0 14px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Switzerland 2026</h1>
+      <span class="sub">12–21 Jun · 2 pax · KL → Zürich → Lucerne → Grindelwald → Interlaken → Zermatt → Montreux → Geneva</span>
+    </div>
+    <div class="switch" role="tablist">
+      <button id="tab-itin" role="tab" aria-selected="true" onclick="showView('itin')">Itinerary</button>
+      <button id="tab-budget" role="tab" aria-selected="false" onclick="showView('budget')">Budget</button>
+      <button id="tab-pack" role="tab" aria-selected="false" onclick="showView('pack')">Packing</button>
+      <button id="tab-weather" role="tab" aria-selected="false" onclick="showView('weather')">Weather</button>
+      <button id="tab-guide" role="tab" aria-selected="false" onclick="showView('guide')">Guide</button>
+    </div>
+  </div>
+</header>
+
+<div class="daystrip" id="daystrip"><div class="scroll" id="daystripScroll"></div></div>
+
+<main class="wrap pad">
+
+  <!-- ITINERARY -->
+  <section class="view on" id="view-itin">
+    <div class="overview" id="overview"></div>
+    <div class="keylegend">
+      <div class="kl-row"><span class="kl-tag your">Your plan</span><span>Times, the day flow &amp; booked tickets — straight from your sheet.</span></div>
+      <div class="kl-row"><span class="kl-tag rec">My picks</span><span>The <b>⏱ time-to-spend</b> chips and the expandable <b>“Why go &amp; timing”</b> notes are my recommendations.</span></div>
+    </div>
+    <div class="hint">Edit a <b>time</b> or pick a <b>duration</b> — later stops shift automatically. Tap a status pill to cycle Booked → To book · edit a <b>Spend</b> amount (synced with Budget). Saved on this device.</div>
+    <div class="legend">
+      <span class="status booked">Booked / paid</span>
+      <span class="status deciding">Deciding</span>
+      <span class="status tobook">To book</span>
+    </div>
+    <div class="legend" style="margin-top:-6px">
+      <span style="color:var(--ok);font-weight:700">Paid</span>
+      <span style="color:var(--warn);font-weight:700">To book</span>
+      <span style="color:#9a9082;font-weight:700">Estimate</span>
+      <span style="color:var(--faint)">— Spend is in local currency (€/CHF/RM); day totals convert to RM</span>
+    </div>
+    <div style="text-align:center;margin:-2px 0 14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button id="resetTimes" class="resetbtn">↺ Reset times &amp; durations</button>
+      <button id="backupBtn" class="resetbtn">⬇ Back up my edits</button>
+      <button id="restoreBtn" class="resetbtn">⬆ Restore</button>
+      <input type="file" id="restoreFile" accept="application/json,.json" style="display:none">
+    </div>
+    <div id="days"></div>
+  </section>
+
+  <!-- BUDGET -->
+  <section class="view" id="view-budget">
+    <div class="note-banner">All figures from your budget sheet (RM). “Per pax” = ÷2. Fuel & tolls are estimates. Tap a row’s pill to mark paid / to pay.</div>
+    <div class="btotals" id="btotals"></div>
+    <div id="budgetList"></div>
+    <details class="alt" style="margin:18px 0 0" id="altWrap"></details>
+    <div id="foodPrices"></div>
+  </section>
+
+  <!-- GUIDE -->
+  <section class="view" id="view-guide">
+    <div class="note-banner" style="background:var(--ok-soft);border-color:#cbe2d1;color:#2c4a37">
+      Good news: your Malaysian passport is <b>visa-free</b> for this trip and <b>ETIAS is not required yet</b> (it starts ~Q4 2026).
+    </div>
+    <div id="guide"></div>
+  </section>
+
+  <!-- PACKING -->
+  <section class="view" id="view-pack">
+    <div class="hint">Ticks saved on this device. Add your own items per section. The clothing list follows the forecast — see the <b>Weather</b> tab for the day-by-day reasoning.</div>
+    <div id="packList"></div>
+  </section>
+
+  <!-- WEATHER -->
+  <section class="view" id="view-weather">
+    <div id="weather"></div>
+  </section>
+
+</main>
+
+<footer>
+  Travel companion — not your source of truth. Always keep the original confirmation emails &amp; apps.<br>
+  Built Jun 2026 · works fully offline · add to Home Screen for an app icon.
+</footer>
+
+<script>
+/* ============================= ICONS ============================= */
+const I = {
+  plane:'M2 16l20-6-7-1-4-7-1 5-6 2 3 2-1 4z',
+  train:'M5 17V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM5 11h14M8 22l-2-3m12 3l-2-3M9 7h6',
+  car:'M5 16l1.5-5A2 2 0 0 1 8.4 9.6h7.2a2 2 0 0 1 1.9 1.4L19 16M4 16h16v3H4zM7 19v2M17 19v2',
+  walk:'M13 4a1.5 1.5 0 1 0 0-.01M11 8l-2 5 2 1 1 6M11 8l3 2 3 1M9 13l-2 1-1 4',
+  bus:'M4 16V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10M4 16h16M4 16v3M20 16v3M4 11h16M8 19v2m8-2v2',
+  cablecar:'M3 5l18-2M12 4v4M5 9h14a1 1 0 0 1 1 1v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a1 1 0 0 1 1-1zM4 13h16',
+  boat:'M3 14l1.5 5h15L21 14M4 14l1-7h14l1 7M12 3v4M5 14h14',
+  bed:'M3 7v11M3 12h18a0 0 0 0 1 0 0v6M21 18v-4a3 3 0 0 0-3-3h-7v4M3 14h6',
+  food:'M5 3v7a2 2 0 0 0 4 0V3M7 3v18M16 3c-1.5 0-3 1.5-3 4s1.5 4 3 4v8',
+  ticket:'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4 2 2 0 0 1 0-4zM14 5v14',
+  pin:'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11zM12 10a2 2 0 1 0 0-.01',
+  clock:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  note:'M5 4h11l3 3v13a0 0 0 0 1 0 0H5a0 0 0 0 1 0 0zM15 4v4h4M8 13h8M8 17h6',
+  warn:'M12 3l9 16H3zM12 10v4M12 17v.01',
+  check:'M5 12l4 4L19 7',
+  flag:'M5 21V4M5 4c3-2 7 2 11 0v9c-4 2-8-2-11 0',
+  sun:'M12 4V2m0 20v-2m8-8h2M2 12h2m13.5-5.5l1.5-1.5M4.5 19.5l1.5-1.5m11 0l1.5 1.5M4.5 4.5l1.5 1.5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+  cross:'M6 6l12 12M18 6L6 18',
+  bulb:'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10c.7.7 1 1.6 1 2.5h6c0-.9.3-1.8 1-2.5a6 6 0 0 0-4-10z',
+  info:'M12 16v-5M12 8h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
+  shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  euro:'M16 8a5 5 0 1 0 0 8M5 10h7M5 14h6',
+  eye:'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  lock:'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v3'
+};
+function svg(name,cls){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"${cls?` class="${cls}"`:''}><path d="${I[name]||I.pin}"/></svg>`;}
+function modeIcon(m){return {plane:'plane',train:'train',car:'car',walk:'walk',bus:'bus',cablecar:'cablecar',boat:'boat',metro:'train',tram:'train'}[m]||'pin';}
+function kindIcon(k,it){
+  if(it.mode) return modeIcon(it.mode);
+  return {activity:'pin',meal:'food',logistics:'note',warn:'warn',buffer:'clock',note:'note'}[k]||'pin';
+}
+function mapUrl(q){return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q);}
+/* convert any 24h clock time (HH:MM) inside a string to 12h am/pm; leaves durations/dates untouched */
+function to12h(s){
+  if(s==null) return s;
+  return String(s).replace(/(\d{1,2}):(\d{2})(?!\s?[ap]m)/gi,(m,h,mm)=>{
+    h=+h; if(h>23||+mm>59) return m;
+    const ap=h<12?'am':'pm'; let hh=h%12; if(hh===0) hh=12;
+    return hh+':'+mm+' '+ap;
+  });
+}
+
+/* ============================= DATA ============================= */
+const DAYS = [
+ {date:'12 Jun',dow:'Thu',title:'Arrive Zürich → Lucerne → Mt Pilatus',cc:['my','ae','ch'],sub:'Land 07:00 · Pilatus Golden Round Trip',
+  items:[
+    {k:'transit',t:'11 Jun 21:55',title:'KLIA T1 → Abu Dhabi',mode:'plane',travel:'6h 55m',detail:'Etihad EY487 · arrive Zayed Intl (AUH) Terminal A 00:50.',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY487'},place:'Kuala Lumpur International Airport'},
+    {k:'buffer',t:'00:50',title:'Connect at Abu Dhabi (AUH)',dur:'~1h 35m',detail:'Terminal A.'},
+    {k:'transit',t:'02:25',title:'Abu Dhabi → Zürich',mode:'plane',travel:'6h 35m',detail:'Etihad EY143 · arrive Zürich Airport (ZRH) 07:00.',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY143'},place:'Zurich Airport'},
+    {k:'transit',t:'07:40',title:'ZRH → Zürich HB → Luzern',mode:'train',travel:'~1h',detail:'Trains every ~30 min. Sit back and enjoy the ride.',place:'Lucerne'},
+    {k:'logistics',t:'09:00',title:'Drop luggage · Hotel Monopol Luzern',detail:'120 m from Lucerne station.',place:'Hotel Monopol Luzern'},
+    {k:'transit',t:'09:30',title:'Luzern → Alpnachstad (lake steamer)',mode:'boat',travel:'~1.5h',detail:'Scenic paddle-steamer across Lake Lucerne.',place:'Alpnachstad'},
+    {k:'transit',t:'11:00',title:'Alpnachstad → Pilatus Kulm (cogwheel)',mode:'cablecar',travel:'30 min',detail:'World’s steepest cogwheel railway (48%).',book:{id:'tk-pilatus',s:false,L:'Golden Round Trip · HFC CHF47pp'},place:'Pilatus Kulm'},
+    {k:'activity',t:'11:45',title:'Mt Pilatus summit',dur:'~2h',detail:'Dragon Path walk · panoramic terraces · summit viewpoints · café.',place:'Pilatus Kulm'},
+    {k:'transit',t:'14:00',title:'Pilatus → Fräkmüntegg → Kriens → Luzern',mode:'cablecar',detail:'Dragon Ride cable car → gondola to Kriens → Bus 1 back to Luzern.',place:'Lucerne'},
+    {k:'activity',t:'15:30',title:'Lucerne old town',dur:'~2h',detail:'Chapel Bridge & Water Tower · Lion Monument · lakefront stroll.',place:'Chapel Bridge Lucerne'},
+    {k:'meal',t:'19:00',title:'Dinner in Lucerne',dur:'~1.5h'}
+  ],
+  stay:{nm:'Hotel Monopol Luzern',book:{id:'b-acc-luc',s:true},nt:'Lucerne · 120 m from station · 2 nights (12–14 Jun)',rm:1660,night:830,place:'Hotel Monopol Luzern'}},
+
+ {date:'13 Jun',dow:'Fri',title:'Stoos Ridge → Rigi → Weggis',cc:['ch'],sub:'Steepest funicular · ridge hike · sunset cruise',
+  items:[
+    {k:'meal',t:'05:30',title:'Early breakfast / grab-and-go'},
+    {k:'transit',t:'06:06',title:'Luzern HB → Schwyz',mode:'train',travel:'~41 min',detail:'First train (arr ~06:47), then Bus 501 → Stoosbahn.',book:{id:'tk-dsd1',s:false,L:'Day Saver Duo'},place:'Schwyz'},
+    {k:'transit',t:'07:30',title:'Stoosbahn funicular → Stoos',mode:'cablecar',travel:'4 min',detail:'World’s steepest funicular (110%).',place:'Stoos'},
+    {k:'transit',t:'08:30',title:'Klingenstock chairlift',mode:'cablecar',detail:'Opens 08:30 — first summer day of 2026.',place:'Klingenstock'},
+    {k:'activity',t:'08:30',title:'Stoos Ridge hike',dur:'~3h',detail:'Klingenstock (1,948 m) → Fronalpstock (1,922 m) · 4.4 km ridge · views of 10 lakes incl. Lake Lucerne.',place:'Stoos Ridge'},
+    {k:'meal',t:'12:00',title:'Lunch in Schwyz',dur:'~1h',detail:'Café Konditorei Ryser (the Land Toast) or Coop/Migros for a picnic.'},
+    {k:'activity',t:'13:48',title:'Rigi Kulm',dur:'~3h',detail:'“Queen of Mountains” (1,798 m) — panorama over Lakes Lucerne, Zug & Lauerz; pre-sunset golden light.',place:'Rigi Kulm'},
+    {k:'transit',t:'17:45',title:'Rigi Kaltbad → Weggis (cable car)',mode:'cablecar',detail:'Leave Rigi Kulm by 17:30 — last cable car Kaltbad→Weggis ~19:25.',place:'Weggis'},
+    {k:'transit',t:'19:05',title:'Sunset cruise Weggis → Luzern',mode:'boat',travel:'~40 min',detail:'SGV golden-hour boat; last boat ~20:05. Chapel Bridge lit on arrival.',place:'Lucerne'},
+    {k:'meal',t:'20:00',title:'Dinner in Lucerne',dur:'~1.5h'}
+  ],
+  stay:{nm:'Hotel Monopol Luzern',book:{id:'b-acc-luc',s:true},nt:'Night 2 of 2',rm:null,place:'Hotel Monopol Luzern'}},
+
+ {date:'14 Jun',dow:'Sat',title:'Lucerne → Lungern → Grindelwald',cc:['ch'],sub:'Brünig Pass · turquoise Lungernsee',
+  items:[
+    {k:'logistics',t:'08:30',title:'Check out · depart Hotel Monopol'},
+    {k:'transit',t:'09:06',title:'Luzern → Lungern',mode:'train',travel:'~55 min',detail:'RegioExpress via the Brünig Pass. Free station lockers at Lungern.',book:{id:'tk-dsd2',s:false,L:'Day Saver Duo'},place:'Lungern'},
+    {k:'activity',t:'10:10',title:'Lungernsee lake stops',dur:'~2–2.5h',detail:'Inseli park peninsula · Mülibachersträssli 14 S-curve viewpoint (~12 min uphill) · Chälrütirank panoramic viewpoint. Keep belongings secure.',place:'Lungernsee'},
+    {k:'transit',t:'12:45',title:'Lungern → Interlaken Ost → Grindelwald',mode:'train',travel:'~1h50',detail:'Scenic Brünig Pass; on the Grindelwald leg sit RIGHT for Eiger views.',place:'Grindelwald'},
+    {k:'activity',t:'17:00',title:'Check in · Sunstar Hotel & Spa',detail:'150 m from First gondola. Spa — bring swimwear.',place:'Sunstar Hotel Grindelwald'},
+    {k:'meal',t:'19:00',title:'Dinner in Grindelwald',dur:'~1.5h'}
+  ],
+  stay:{nm:'Sunstar Hotel & Spa',book:{id:'b-acc-gri',s:true},nt:'Grindelwald · has a spa · 1 night (14–15 Jun) · incl. breakfast',rm:2109,night:2109,place:'Sunstar Hotel Grindelwald'}},
+
+ {date:'15 Jun',dow:'Sun',title:'Grindelwald First → Interlaken',cc:['ch'],sub:'Cliff Walk · Glider · Cart · Trottibike',
+  items:[
+    {k:'logistics',t:'08:00',title:'Store luggage · Sunstar concierge'},
+    {k:'transit',t:'08:30',title:'Grindelwald → First (gondola)',mode:'cablecar',travel:'25 min',detail:'Base station to First (2,168 m). HFC 50%.',place:'Grindelwald First'},
+    {k:'activity',t:'09:00',title:'First Cliff Walk',dur:'~20 min',detail:'Tissot suspended walkway over the cliff edge (free, do it first).',place:'First Cliff Walk'},
+    {k:'activity',t:'09:30',title:'First Glider',detail:'Fly prone like an eagle, First → Schreckfeld, up to 83 km/h.',book:{id:'tk-first',s:false,L:'CHF21.50pp'},place:'First Grindelwald'},
+    {k:'activity',t:'10:30',title:'Mountain Cart: Schreckfeld → Bort',detail:'3-wheel go-kart, 3 km on natural terrain.',place:'Bort Grindelwald'},
+    {k:'activity',t:'11:15',title:'Trottibike: Bort → Grindelwald',detail:'5 km scooter descent (30–45 min). Use front + rear brakes; ease off on steep bits.',place:'Grindelwald'},
+    {k:'transit',t:'14:00',title:'Grindelwald → Interlaken Ost',mode:'train',travel:'40 min',detail:'Bernese Oberland Bahn. FREE with pass.',place:'Interlaken'},
+    {k:'activity',t:'15:00',title:'Check in near Interlaken West · Höheweg stroll',dur:'~2h',place:'Interlaken'},
+    {k:'meal',t:'19:00',title:'Dinner in Interlaken',dur:'~1.5h'}
+  ],
+  stay:{nm:'Interlaken (near West station)',book:{id:'b-acc-int',s:false},nt:'Interlaken · 3 nights (15–18 Jun) — confirm exact hotel/Airbnb',rm:3695,night:1231.67,place:'Interlaken West'}},
+
+ {date:'16 Jun',dow:'Mon',title:'Lauterbrunnen Valley · Wengen · Mürren',cc:['ch'],sub:'Waterfalls & cliff villages',
+  items:[
+    {k:'warn',title:'Grütschalp cable car CLOSED 13 Apr–10 Jul 2026',detail:'Route to Mürren is now via PostBus 141 → Stechelberg → Schilthornbahn. Allow ~20 min extra.'},
+    {k:'transit',t:'08:30',title:'Interlaken → Lauterbrunnen',mode:'train',travel:'~25 min',detail:'Interlaken West → Ost → Lauterbrunnen (BOB).',place:'Lauterbrunnen'},
+    {k:'activity',t:'09:00',title:'Lauterbrunnen village',dur:'~1.5h',detail:'Staubbach Falls (297 m) · church viewpoint · Dorfstrasse. (Trümmelbach Falls optional, CHF16pp.)',place:'Staubbach Falls Lauterbrunnen'},
+    {k:'transit',t:'10:30',title:'Lauterbrunnen → Wengen',mode:'train',travel:'15 min',detail:'Wengernalp Bahn.',place:'Wengen'},
+    {k:'activity',t:'10:45',title:'Wengen (car-free)',dur:'~1.5h',detail:'Panorama viewpoints · Chalet Aberot · Eiger–Mönch–Jungfrau backdrop.',place:'Wengen'},
+    {k:'transit',t:'13:00',title:'PostBus 141 → Stechelberg → Mürren',mode:'bus',detail:'Schilthornbahn via Gimmelwald. Last up ~17:00.',place:'Mürren'},
+    {k:'activity',t:'14:30',title:'Mürren + Allmendhubel',dur:'~2h',detail:'Eiger/Mönch/Jungfrau panorama · car-free village · Allmendhubel flower park & terrace. Last funicular down 17:20.',place:'Mürren'},
+    {k:'meal',t:'19:30',title:'Dinner in Interlaken',dur:'~1.5h'}
+  ],
+  stay:{nm:'Interlaken (near West station)',book:{id:'b-acc-int',s:false},nt:'Night 2 of 3',rm:null,place:'Interlaken West'}},
+
+ {date:'17 Jun',dow:'Tue',title:'Lake Brienz + Lake Thun',cc:['ch'],sub:'Two lakes by boat · Iseltwald · Brienz · Spiez',
+  items:[
+    {k:'transit',t:'08:30',title:'Boat: Interlaken Ost → Iseltwald',mode:'boat',travel:'~30 min',detail:'BLS Lake Brienz. FREE with pass.',book:{id:'tk-lakes',s:false,L:'Pier CHF5pp'},place:'Iseltwald'},
+    {k:'activity',t:'09:00',title:'Iseltwald',dur:'~1h',detail:'Iconic wooden pier (Crash Landing on You) · Brienzersee shore walk.',place:'Iseltwald'},
+    {k:'transit',t:'10:05',title:'Boat: Iseltwald → Brienz',mode:'boat',travel:'~30 min',place:'Brienz'},
+    {k:'meal',t:'11:30',title:'Lunch in Brienz',dur:'~1h',detail:'Harbour-side; Brunngasse wood-carving street.'},
+    {k:'transit',t:'13:05',title:'Boat: Brienz → Interlaken Ost → Spiez',mode:'boat',detail:'Then IC train Interlaken Ost → Spiez (~20 min).',place:'Spiez'},
+    {k:'activity',t:'14:00',title:'Spiez',dur:'~2.5h',detail:'Schloss Spiez castle (CHF12pp) · terraced gardens · marina · free vineyard walk.',book:{id:'tk-spiez',s:false,L:'Castle CHF12pp'},place:'Schloss Spiez'},
+    {k:'transit',t:'17:00',title:'Boat: Spiez → Interlaken West',mode:'boat',travel:'~55 min',detail:'Lake Thun golden-hour cruise.',place:'Interlaken'},
+    {k:'meal',t:'19:30',title:'Dinner in Interlaken',dur:'~1.5h'}
+  ],
+  stay:{nm:'Interlaken (near West station)',book:{id:'b-acc-int',s:false},nt:'Night 3 of 3 · check out tomorrow',rm:null,place:'Interlaken West'}},
+
+ {date:'18 Jun',dow:'Wed',title:'Interlaken → Zermatt',cc:['ch'],sub:'Scenic rail · Matterhorn sunset',
+  items:[
+    {k:'logistics',t:'08:30',title:'Check out · depart Interlaken'},
+    {k:'transit',t:'09:00',title:'Interlaken Ost → Spiez → Visp',mode:'train',travel:'~1h',detail:'IC train. HFC 50%.',place:'Visp'},
+    {k:'transit',t:'11:00',title:'Visp → Zermatt',mode:'train',travel:'1h 20m',detail:'Matterhorn Gotthard Bahn through the Rhône Valley — first Matterhorn glimpse on arrival.',place:'Zermatt Bahnhof'},
+    {k:'activity',t:'13:00',title:'Check in · Arca Aparthotel & Spa',detail:'Car-free village. Drop luggage, freshen up. Spa — bring swimwear.',place:'Arca Aparthotel Spa Zermatt'},
+    {k:'activity',t:'17:00',title:'Optional: Gorner Gorge',dur:'~1.5h',detail:'Canyon walk ~15 min south of the village (CHF5.50pp).',book:{id:'tk-gorge',s:false,L:'CHF5.50pp'},place:'Gorner Gorge Zermatt'},
+    {k:'meal',t:'19:00',title:'Dinner / cook at the apartment',dur:'~1.5h'},
+    {k:'activity',t:'20:30',title:'Matterhorn sunset viewpoint',dur:'~1.5h',detail:'Kirchbrücke (5 min) or Mürini / Petit Village (15 min). Sunset ~21:20, alpenglow on the summit to ~21:50. Bring a warm layer.',place:'Kirchbrücke Zermatt'}
+  ],
+  stay:{nm:'Arca Aparthotel & Spa',book:{id:'b-acc-zer',s:true},nt:'Zermatt · has a spa · 2 nights (18–20 Jun)',rm:1912.75,night:956.375,place:'Arca Aparthotel Spa Zermatt'}},
+
+ {date:'19 Jun',dow:'Thu',title:'Gornergrat → Riffelsee → 5-Seenweg',cc:['ch'],sub:'First cogwheel · Five Lakes Walk',
+  items:[
+    {k:'meal',t:'06:15',title:'Early breakfast'},
+    {k:'transit',t:'07:00',title:'Zermatt → Gornergrat (cogwheel)',mode:'train',travel:'33 min',detail:'⭐ First train — least crowded, best light. Sit RIGHT for the Matterhorn. Arrive 07:33.',book:{id:'tk-gorner',s:false,L:'HFC 50%'},place:'Gornergrat Bahn Zermatt'},
+    {k:'activity',t:'07:33',title:'Gornergrat summit (3,089m)',dur:'~1h 30m',detail:'Monte Rosa (4,634 m) + 28 peaks · ZOOOM Matterhorn exhibition · summit platform.',place:'Gornergrat'},
+    {k:'transit',t:'09:00',title:'Gornergrat → Rotenboden',mode:'train',travel:'~6 min',place:'Rotenboden'},
+    {k:'activity',t:'09:10',title:'Riffelsee (Matterhorn reflection)',dur:'~50 min',detail:'15-min walk from Rotenboden (2,815 m) — calmest mirror before 09:00.',place:'Riffelsee Zermatt'},
+    {k:'transit',t:'10:00',title:'Walk Rotenboden → Riffelberg',mode:'walk',travel:'~45 min',dist:'2.2 km · downhill',place:'Riffelberg Zermatt'},
+    {k:'meal',t:'11:15',title:'Lunch · Riffelhaus 1853',dur:'~1h',detail:'Open year-round (the Riffelberg buffet is closed in June). Book +41 27 966 65 00.',place:'Riffelhaus 1853 Zermatt'},
+    {k:'transit',t:'12:30',title:'Riffelberg → Zermatt → Sunnegga',mode:'train',detail:'Cogwheel down, then the Sunnegga funicular (HFC 50%).',place:'Sunnegga Zermatt'},
+    {k:'activity',t:'13:15',title:'5-Seenweg (Five Lakes Walk)',dur:'~3h',detail:'Blauherd → Stellisee → Grindjisee → Grünsee → Moosjisee → Leisee → Sunnegga · 9.8 km · Matterhorn the whole way. Grünsee & Leisee are swimmable — pack swimwear.',place:'Stellisee Zermatt'},
+    {k:'transit',t:'16:30',title:'Sunnegga → Zermatt (funicular)',mode:'train'},
+    {k:'meal',t:'19:00',title:'Dinner in Zermatt',dur:'~1.5h'}
+  ],
+  stay:{nm:'Arca Aparthotel & Spa',book:{id:'b-acc-zer',s:true},nt:'Night 2 of 2 · check out tomorrow',rm:null,place:'Arca Aparthotel Spa Zermatt'}},
+
+ {date:'20 Jun',dow:'Fri',title:'Zermatt → Montreux → fly home',cc:['ch','ae'],sub:'Chillon Castle, then night flight from Geneva',
+  items:[
+    {k:'logistics',t:'08:00',title:'Check out · depart Zermatt'},
+    {k:'transit',t:'08:30',title:'Zermatt → Visp → Lausanne → Montreux',mode:'train',travel:'~3h 15m',detail:'Scenic rail; Lake Geneva opens up after Lausanne. FREE with Day Saver Duo.',book:{id:'tk-dsd3',s:false,L:'Day Saver Duo'},place:'Montreux'},
+    {k:'activity',t:'12:00',title:'Montreux lakeside',dur:'~1.5h',detail:'Promenade · Freddie Mercury statue · Lake Geneva views. Drop bags in a station locker.',place:'Montreux'},
+    {k:'meal',t:'13:30',title:'Lunch in Montreux',dur:'~1h'},
+    {k:'transit',t:'14:30',title:'Montreux → Château de Chillon',mode:'bus',travel:'10 min',detail:'Or a 45-min lakeside walk.',place:'Château de Chillon'},
+    {k:'activity',t:'14:45',title:'Château de Chillon',dur:'~1.5h',detail:'Medieval lakeside castle (CHF15pp).',book:{id:'tk-chillon',s:false,L:'CHF15pp'},place:'Château de Chillon'},
+    {k:'transit',t:'17:00',title:'Montreux → Geneva Airport',mode:'train',travel:'~1h 10m',detail:'Arrive GVA ~18:15 — check in for the 21:15 flight (be there ~3h before).',place:'Geneva Airport'},
+    {k:'transit',t:'21:15',title:'Geneva → Abu Dhabi',mode:'plane',travel:'6h 45m',detail:'Etihad EY148 · arrive Zayed Intl (AUH) 06:00 (+1).',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY148'},place:'Geneva Airport'}
+  ],
+  stay:{free:'Overnight flight (Geneva → Abu Dhabi)'}},
+
+ {date:'21 Jun',dow:'Sat',title:'Abu Dhabi → Kuala Lumpur',cc:['ae','my'],sub:'Home',
+  items:[
+    {k:'buffer',t:'06:00',title:'Connect at Abu Dhabi (AUH)',dur:'~2h 35m',detail:'Terminal A.'},
+    {k:'transit',t:'08:35',title:'Abu Dhabi → Kuala Lumpur',mode:'plane',travel:'7h 15m',detail:'Etihad EY486 · arrive KLIA T1 19:50 — HOME.',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY486'},place:'Kuala Lumpur International Airport'}
+  ],
+  stay:{free:'Home'}}
+];
+
+const LEGS=[
+  {a:'KL',b:'Zürich',mode:'plane',t:'~14h via Abu Dhabi'},
+  {a:'Zürich',b:'Lucerne',mode:'train',t:'~1h'},
+  {a:'Lucerne',b:'Grindelwald',mode:'train',t:'~2h 34m'},
+  {a:'Grindelwald',b:'Interlaken',mode:'train',t:'~40m'},
+  {a:'Interlaken',b:'Zermatt',mode:'train',t:'~2h 15m'},
+  {a:'Zermatt',b:'Montreux',mode:'train',t:'~3h 15m'},
+  {a:'Montreux',b:'Geneva',mode:'train',t:'~1h 10m'},
+  {a:'Geneva',b:'KL',mode:'plane',t:'~16h via Abu Dhabi'}
+];
+
+/* Single source of truth for all costs. `itin` links a line to an itinerary item (shown in its Spend column).
+   paid:true = booked (locked on the itinerary, still editable in Budget). pax is derived as rm/2. */
+const BUDGET=[
+  {cat:'Flights',date:'12 Jun',n:'Etihad return (KL ⇄ Zürich / Geneva · via Abu Dhabi)',rm:4864,id:'b-fl',paid:true,itin:'KLIA T1 → Abu Dhabi'},
+  {cat:'Stays',date:'12–14 Jun',n:'Lucerne · Hotel Monopol (2 nights)',rm:1660,id:'b-acc-luc',paid:true},
+  {cat:'Stays',date:'14–15 Jun',n:'Grindelwald · Sunstar Hotel & Spa (1 night)',rm:2109,id:'b-acc-gri',paid:true},
+  {cat:'Stays',date:'15–18 Jun',n:'Interlaken (3 nights) — confirm hotel',rm:3695,id:'b-acc-int',paid:false},
+  {cat:'Stays',date:'18–20 Jun',n:'Zermatt · Arca Aparthotel & Spa (2 nights)',rm:1912.75,id:'b-acc-zer',paid:true},
+  {cat:'Stays',date:'20–21 Jun',n:'Montreux · Freddie Mercury Hotel ⚠ conflicts with 20 Jun night flight — confirm/cancel',rm:666.33,id:'b-acc-mon',paid:false,est:true},
+  {cat:'Transport',date:'12 Jun',n:'Half Fare Card (2 pax · 1 month)',chf:274,rm:1465.9,id:'b-tr-hfc',paid:false,est:true},
+  {cat:'Transport',date:'Days 2,4,9',n:'Day Saver Duo ×3 (Stoos/Rigi · Lungern · Montreux)',chf:267,rm:1428.45,id:'b-tr-dsd',paid:false,est:true},
+  {cat:'Tickets',date:'12 Jun',n:'Mt Pilatus Golden Round Trip (HFC · 2 pax)',chf:94,rm:502.9,id:'b-tk-pilatus',paid:false,est:true,itin:'Alpnachstad → Pilatus Kulm (cogwheel)'},
+  {cat:'Tickets',date:'13 Jun',n:'Stoos Peak Experience ticket (HFC · 2 pax)',chf:88,rm:470.8,id:'b-tk-stoos',paid:false,est:true},
+  {cat:'Tickets',date:'15 Jun',n:'Grindelwald First: Glider + Cart + Trottibike (2 pax)',chf:85,rm:454.75,id:'b-tk-first',paid:false,est:true,itin:'First Glider'},
+  {cat:'Tickets',date:'17 Jun',n:'Iseltwald pier + Spiez Castle (2 pax)',chf:34,rm:181.9,id:'b-tk-lakes',paid:false,est:true,itin:'Boat: Interlaken Ost → Iseltwald'},
+  {cat:'Tickets',date:'18 Jun',n:'Gorner Gorge (optional · 2 pax)',chf:11,rm:58.85,id:'b-tk-gorge',paid:false,est:true,itin:'Optional: Gorner Gorge'},
+  {cat:'Tickets',date:'19 Jun',n:'Gornergrat + Sunnegga (HFC · 2 pax)',chf:180,rm:963,id:'b-tk-gorner',paid:false,est:true,itin:'Zermatt → Gornergrat (cogwheel)'},
+  {cat:'Tickets',date:'20 Jun',n:'Château de Chillon (2 pax)',chf:30,rm:160.5,id:'b-tk-chillon',paid:false,est:true,itin:'Château de Chillon'}
+];
+const COSTBYITIN={}; BUDGET.forEach(e=>{ if(e.itin) COSTBYITIN[e.itin]=e; });
+const ITINLOC={}; DAYS.forEach((d,di)=>d.items.forEach((it,ii)=>{ if(!(it.title in ITINLOC)) ITINLOC[it.title]={di,ii}; })); // title -> itinerary location, for editing booking times from the Budget
+
+const PACK=[
+ {c:'Documents & money',items:[
+   {l:'Passport',s:'+ photocopies / digital copies'},
+   {l:'Travel insurance docs'},
+   {l:'Etihad confirmations',s:' (EY487/143 out · EY148/486 home)'},
+   {l:'Hotel & Airbnb confirmations',s:'Monopol · Sunstar · Interlaken · Arca'},
+   {l:'Swiss rail pass / tickets',s:'Half-Fare Card + Day Saver Duo (Days 2, 4, 9)'},
+   {l:'Bank cards + cash',s:'Switzerland uses CHF — carry some francs'}
+ ]},
+ {c:'Electronics',items:[
+   {l:'Phone + charger'},
+   {l:'Power bank'},
+   {l:'Swiss adapter (Type J)',s:'Switzerland uses its own plug — a standard EU adapter may not fit!'},
+   {l:'Camera'},
+   {l:'eSIM that includes Switzerland',s:'many “EU” plans exclude it'}
+ ]},
+ {c:'Clothing',items:[
+   {l:'T-shirts / shorts / dress',s:'Warm valley afternoons & Montreux (~22–24°C)'},
+   {l:'Base layers (merino/synthetic)',s:'Mountain days — not cotton'},
+   {l:'Warm layers / fleece',s:'+ a light down — Gornergrat & gondola tops run near-freezing'},
+   {l:'Windbreaker / rain jacket',s:'Waterproof shell — Oberland weather flips fast'},
+   {l:'Hiking / long trousers',s:'Stoos Ridge, First, 5-Seenweg'},
+   {l:'Hiking shoes',s:'Stoos Ridge · First · 5-Seenweg (can be muddy/snowy)'},
+   {l:'Comfortable walking shoes',s:'Towns, lakeside & cobbles'},
+   {l:'Swimwear',s:'Hotel spas (Sunstar, Arca) + swimmable lakes (Grünsee, Leisee)'},
+   {l:'Beanie + light gloves',s:'Gornergrat (3,089 m) & summits — near-freezing in wind'},
+   {l:'Buff / neck scarf',s:'Alpine wind & sun'},
+   {l:'Sunglasses, cap, sunscreen',s:'Strong alpine UV; glare doubles on snow'}
+ ]},
+ {c:'Health & misc',items:[
+   {l:'Personal medication'},
+   {l:'SPF lip balm',s:'Dry alpine air'},
+   {l:'Toiletries'},
+   {l:'Daypack',s:'For the hiking days'},
+   {l:'Reusable water bottle',s:'Swiss tap & fountains are excellent'},
+   {l:'Travel umbrella'}
+ ]}
+];
+
+/* ============================= ENRICH (my notes per place) ============================= */
+/* keyed by the item title. story = why it matters · look = what to notice · breakdown = sub-timings · take = my recommendation */
+const ENRICH = {
+ 'Mt Pilatus summit':{
+   story:'Legend says dragons once nested on Pilatus; today you reach it by the world’s steepest cogwheel railway (48%), opened 1889, with a panorama over Lake Lucerne and the Alps.',
+   look:['The Dragon Path carved into the cliff','Lake Lucerne spread out far below','The jagged Tomlishorn ridge','Choughs (alpine crows) riding the updrafts'],
+   breakdown:[['Lake steamer to Alpnachstad','~1.5h'],['Cogwheel up','30 min'],['Summit + Dragon Path','~2h'],['Dragon Ride cable car down','~30 min']],
+   take:'Do the “Golden Round Trip” — boat + cogwheel up, cable car + gondola down — so you never backtrack. HFC halves it.'},
+ 'Stoos Ridge hike':{
+   story:'A 4.4 km ridge between two peaks above car-free Stoos village, reached by the world’s steepest funicular (110%). 13 Jun is the first summer day the Klingenstock chairlift runs.',
+   look:['Up to 10 lakes from the crest','The sheer drop on both sides of the ridge','Lake Lucerne shimmering far below','Wildflowers on the early-summer slopes'],
+   breakdown:[['Funicular + chairlift up','~30 min'],['Klingenstock → Fronalpstock ridge','~3h'],['Chairlift down to Stoos','~10 min']],
+   take:'Go early — it’s a moderate but exposed ridge; do it before the afternoon cloud builds, then carry on to Rigi for sunset.'},
+ 'Gornergrat summit (3,089m)':{
+   story:'Opened 1898, the Gornergrat Bahn is Europe’s highest open-air cogwheel railway, climbing to 3,089 m with the Matterhorn ahead the whole way and a 29-peak glacier panorama at the top.',
+   look:['The Matterhorn — sit on the RIGHT going up','The Gorner Glacier sprawling below','Monte Rosa (4,634 m), Switzerland’s highest','The 360° ring of 4,000 m peaks'],
+   breakdown:[['Cogwheel up (first train)','33 min'],['Summit platform + ZOOOM','~90 min'],['Down 1 stop to Rotenboden','6 min'],['Riffelsee + walk to Riffelberg','~95 min']],
+   take:'Take the 07:00 first train: clearest light, fewest people, and the Riffelsee is mirror-calm before 09:00.'},
+ 'Riffelsee (Matterhorn reflection)':{
+   story:'A small alpine tarn at ~2,757 m famous for one thing: on a still morning it mirrors the Matterhorn perfectly — the classic Zermatt shot.',
+   look:['The reflection (calmest = early morning)','The second smaller pond just below','Cotton-grass at the water’s edge','Get low to the water for the full mirror'],
+   breakdown:[['Walk from Rotenboden','15 min'],['Reflection photos','30–40 min']],
+   take:'Be here before 09:00 — wind picks up later and kills the mirror. Then walk down to Riffelberg for lunch.'},
+ '5-Seenweg (Five Lakes Walk)':{
+   story:'A 9.8 km loop past five alpine lakes below the Matterhorn — each a different colour, two of them swimmable.',
+   look:['Stellisee — the big reflection lake','Grünsee & Leisee — swimmable (bring a towel)','Black-nosed sheep on the moorland','The Matterhorn visible the entire route'],
+   breakdown:[['Sunnegga/Blauherd up','~15 min'],['Stellisee → Grindjisee → Grünsee','~1.5h'],['Moosjisee → Leisee → Sunnegga','~1.5h']],
+   take:'Start at Blauherd, end at Sunnegga (mostly downhill). Pack swimwear — Leisee by the funicular is a perfect finish.'}
+};
+
+/* ---- Verified opening hours + cautions per stop (web-checked against each date) ---- */
+const OPENINFO = {
+ 'Alpnachstad → Pilatus Kulm (cogwheel)':{h:'Cogwheel runs early May–mid Nov',c:'Buy the Golden Round Trip; HFC gives ~50% (CHF47pp). Arrive early — first departures are quietest.'},
+ 'Mürren + Allmendhubel':{h:'Schilthornbahn ~ every 30 min · Allmendhubel last down 17:20',c:'⚠ The Lauterbrunnen–Grütschalp cable car is CLOSED 13 Apr–10 Jul 2026 — reach Mürren via PostBus 141 → Stechelberg → Schilthornbahn. Leave Allmendhubel by ~16:45 to catch the last funicular down.'},
+ 'Lunch · Riffelhaus 1853':{h:'Open year-round',c:'The Riffelberg Buffet & Bar is CLOSED in June — Riffelhaus 1853 (3 min from the station) is the reliable option. Book ahead: +41 27 966 65 00.'},
+ 'Zermatt → Gornergrat (cogwheel)':{h:'First train 07:00 · every 24 min · last down ~20:00',c:'Take the 07:00 first train for the clearest Matterhorn light and the calmest Riffelsee.'},
+ 'Château de Chillon':{h:'June daily ~09:00–19:00 (last entry 18:00)',c:'CHF15pp, no pass discount. Bus 201 from Montreux (~10 min) or a 45-min lakeside walk. Leave time to reach Geneva Airport for the 21:15 flight.'}
+};
+/* Itinerary Spend amounts now come from the shared BUDGET (via COSTBYITIN) so edits sync both ways. */
+/* ---- Weather & what to wear per base (web-researched, mid-to-late June) ---- */
+const WEATHER = [
+ {loc:'Lucerne',flag:'ch',temp:'City ~12–22°C · Pilatus/Rigi summits ~5–12°C, windy',feels:'Pleasant by the lake; noticeably cold on the cogwheel summits and in the wind.',rain:'Sunny spells, low chance of a passing shower.',
+  wear:'T-shirt + a light layer in town; always carry a warm layer + light shell for Pilatus, Stoos & Rigi.',
+  items:['Warm fleece','Light rain shell','Sunglasses + SPF','Comfy walking shoes','Water bottle']},
+ {loc:'Bernese Oberland',flag:'ch',temp:'Valley ~11–23°C · First/Mürren ~6–14°C',feels:'Mild in Interlaken; cold and breezy on the gondola tops; strong sun at altitude.',rain:'Mixed — clear mornings, the odd afternoon cloud/shower.',
+  wear:'Layer up: base + fleece + rain shell. Shorts only for warm valley afternoons; long trousers for the mountains.',
+  items:['Base layers','Fleece','Waterproof shell','Hiking shoes','Beanie + gloves','Sunglasses + SPF','Daypack']},
+ {loc:'Zermatt',flag:'ch',temp:'Village ~7–18°C · Gornergrat (3,089 m) −2 to +6°C, windy',feels:'Cold mornings in the village; the Gornergrat/5-Seenweg tops feel wintry with biting wind and snow glare.',rain:'Bright, dry mornings; weather can flip fast in the afternoon.',
+  wear:'Village: t-shirt + light layer. Mountain day: base + fleece/down + windproof shell, beanie & gloves. Swimwear for the swimmable lakes & the spa.',
+  items:['Warm down/fleece','Windproof shell','Beanie + gloves','Strong-UV sunglasses','High SPF + lip balm','Hiking shoes','Swimwear']},
+ {loc:'Montreux / Lake Geneva',flag:'ch',temp:'~14–24°C · the warmest leg',feels:'Mild Riviera microclimate; pleasant lakeside warmth.',rain:'Mostly sunny.',
+  wear:'T-shirt + shorts/dress; a light layer for the evening before the night flight.',
+  items:['T-shirt / sundress','Light layer','Sunglasses + SPF','Comfy walking shoes']}
+];
+function gWeather(){
+  const row=(ic,name,txt)=>`<div class="ga-mode" style="grid-template-columns:16px 1fr"><span class="gm-ic">${svg(ic)}</span><span><span class="gm-name">${name}</span><span class="gm-note">${to12h(txt)}</span></span></div>`;
+  const cards=WEATHER.map(w=>gsec('sun',w.loc,
+    row('sun','Temperature',w.temp)+row('info','Feels like',w.feels)+(w.rain?row('bulb','Rain',w.rain):'')+
+    `<div class="take"><b>Wear:</b> ${w.wear}</div>
+     <div class="wpack">${w.items.map(i=>`<span class="wpill">${i}</span>`).join('')}</div>
+     ${w.note?`<div class="ga-line"><b>Heads-up:</b> ${to12h(w.note)}</div>`:''}`, w.flag)).join('');
+  return `<div class="ga-head">Weather &amp; what to wear</div>${cards}`;
+}
+
+/* ---- WEATHER TAB: forecast-based, day-by-day clothing plan (scanned ~11 Jun 2026) ---- */
+const WEATHERPLAN = [
+ {loc:'Lucerne',flag:'ch',days:'12–14 Jun',temp:'City ~12–22°C · summits ~5–12°C',
+  cond:'Sunny to partly cloudy, low rain chance. Pilatus, Stoos & Rigi tops are much colder and windier than the lake.',
+  clothes:'T-shirt + a light layer in town; always pack a warm fleece + light rain shell for the cogwheel summits.',
+  shoes:'Comfy walking shoes; trainers fine for the easy ridge paths.',
+  acc:['Warm fleece','Light rain shell','Sunglasses + SPF','Water bottle']},
+ {loc:'Bernese Oberland',flag:'ch',days:'14–18 Jun · Grindelwald · Interlaken · Lauterbrunnen',temp:'Valley ~11–23°C · mountain tops ~6–14°C',
+  cond:'Mixed — clear mornings, occasional afternoon cloud/shower. Strong sun at altitude; gondola tops (First, Mürren) are cold and breezy.',
+  clothes:'Full layers: base + fleece + waterproof shell. Shorts only for warm valley afternoons; long trousers for the mountains.',
+  shoes:'Hiking shoes for First & the cliff villages; broken-in for the activity day.',
+  acc:['Base layers','Fleece','Waterproof shell','Beanie + gloves','Sunglasses + SPF','Daypack'],
+  alert:'June here flips fast — keep the rain shell on you. Check the live cams (jungfrau.ch) before heading up.'},
+ {loc:'Zermatt',flag:'ch',days:'18–20 Jun',temp:'Village ~7–18°C · Gornergrat 3,089 m −2 to +6°C',
+  cond:'Bright, dry mornings (great for the 07:00 cogwheel). The Gornergrat summit and the 5-Seenweg are wintry up high — biting wind, snow patches, glare.',
+  clothes:'Village: t-shirt + a light layer. Mountain day: base + fleece/down + windproof shell, never just a tee up top.',
+  shoes:'Hiking shoes for the 5-Seenweg (can be muddy/snowy); trainers in the village.',
+  acc:['Warm down/fleece','Windproof shell','Beanie + gloves','Strong-UV sunglasses','High SPF + lip balm','Swimwear (lakes + spa)','Daypack']},
+ {loc:'Montreux / Lake Geneva',flag:'ch',days:'20 Jun',temp:'~14–24°C · the warmest day',
+  cond:'Mostly sunny Riviera microclimate.',
+  clothes:'T-shirt + shorts/dress; a light layer for the evening before the 21:15 Geneva flight.',
+  shoes:'Comfy walking shoes (Chillon + lakeside).',
+  acc:['Light layer','Sunglasses + SPF','Water bottle']}
+];
+function renderWeather(){
+  const card=w=>gsec('sun',`${w.loc} · ${w.days}`,
+    `<div class="ga-primary"><b>${w.temp}</b></div>
+     <div class="ga-line">${to12h(w.cond)}</div>
+     <div class="take"><b>Wear:</b> ${w.clothes}</div>
+     <div class="ga-line"><b>Shoes:</b> ${w.shoes}</div>
+     <div class="wpack">${w.acc.map(a=>`<span class="wpill">${a}</span>`).join('')}</div>
+     ${w.alert?`<div class="opencaution">${svg('warn')}<span>${w.alert}</span></div>`:''}`, w.flag);
+  const intro=`<div class="note-banner" style="background:var(--accent-soft);border-color:#ecd9cd;color:#7a3a1f">
+    <b>One country, big altitude swings.</b> Warm lakeside towns (~22–24°C) but mountain summits near-freezing and windy — Gornergrat is 3,089 m. You’ll go from t-shirt to beanie in one day, so layer up and always carry a shell.</div>`;
+  const accRows=[
+    ['Beanie + gloves','Gornergrat (3,089 m) & the gondola summits'],
+    ['Waterproof / windproof shell','Bernese Oberland flips fast · summits windy'],
+    ['Warm fleece / light down','Every mountain day'],
+    ['Hiking shoes + town walking shoes','Stoos · First · 5-Seenweg + cobbled towns'],
+    ['Swimwear','Hotel spas (Sunstar, Arca) + swimmable lakes (Grünsee, Leisee)'],
+    ['Sunglasses + SPF + lip balm','Strong alpine UV; glare doubles on snow'],
+    ['Swiss Type J adapter','Switzerland’s own plug — an EU adapter may not fit'],
+  ];
+  const accCard=`<div class="ga-head">Pack once — used across the trip</div><div class="gsec">${accRows.map(r=>`<div class="ga-mode" style="grid-template-columns:16px 1fr"><span class="gm-ic">${svg('check')}</span><span><span class="gm-name">${r[0]}</span><span class="gm-note">${r[1]}</span></span></div>`).join('')}</div>`;
+  const reliability=`<div class="opencaution" style="margin-top:4px">${svg('info')}<span><b>Mountain weather changes fast.</b> Temps shown are June averages from the planning sheet. Re-check live before each summit day — MeteoSwiss, plus the cams at jungfrau.ch (Oberland) and matterhornparadise.ch (Zermatt) — and don’t go up in cloud.</span></div>`;
+  document.getElementById('weather').innerHTML = intro + WEATHERPLAN.map(card).join('') + accCard + reliability;
+}
+
+/* ============================= STATE ============================= */
+const LS={book:'eu26.book', paid:'eu26.paid', pack:'eu26.pack', packCustom:'eu26.packCustom'};
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
+const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+
+/* ---- Your saved edits are sticky -------------------------------------------------
+   Everything you type or toggle in the app — budget amounts, start times, durations,
+   notes, paid/booked pills, added rows, custom row order — is saved in your browser
+   and ALWAYS takes precedence over the values written in this file. So when the source
+   text, details or figures are edited, your keyed-in values are NOT overwritten.
+   The only way a saved edit could detach is if the KEY it's stored under changes:
+   per-item data is keyed by `dayIndex|itemTitle`; budget/booking data by line `id`.
+   If a title or id is ever renamed, record it below and the saved value is carried
+   across on load (idempotent — safe to keep forever). Nothing here ever CLEARS data.
+   ⚠️ RENAMED AN ITEM TITLE? add to KEY_RENAMES.  RENAMED A BUDGET/BOOK id? add to ID_RENAMES. */
+const KEY_RENAMES = [
+  // [dayIndex,'old title','new title'] — add when you rename a stop's title
+];
+const ID_RENAMES = [
+  // ['old-id','new-id'],  // if a budget/booking line id ever changes, carry over the edited amount + paid/booked state
+];
+(function migrateSavedEdits(){
+  ['eu26.times','eu26.durmin','eu26.posnat','eu26.poscur','eu26.notes'].forEach(name=>{
+    const o=load(name,{}); let dirty=false;
+    KEY_RENAMES.forEach(([di,a,b])=>{ const ok=di+'|'+a, nk=di+'|'+b;
+      if(ok in o && !(nk in o)){ o[nk]=o[ok]; delete o[ok]; dirty=true; } });
+    if(dirty) save(name,o);
+  });
+  const ord=load('eu26.order',{}); let od=false;
+  KEY_RENAMES.forEach(([di,a,b])=>{ const arr=ord[di]; if(Array.isArray(arr)){ const i=arr.indexOf(a); if(i>=0){ arr[i]=b; od=true; } } });
+  if(od) save('eu26.order',ord);
+  ['eu26.costnat','eu26.paid','eu26.book'].forEach(name=>{
+    const o=load(name,{}); let dirty=false;
+    ID_RENAMES.forEach(([a,b])=>{ if(a in o && !(b in o)){ o[b]=o[a]; delete o[a]; dirty=true; } });
+    if(dirty) save(name,o);
+  });
+})();
+
+let bookState=load(LS.book,{});      // id -> true|false|'deciding'
+let paidState=load(LS.paid,{});      // id -> true|false
+let packState=load(LS.pack,{});      // key -> true
+let packCustom=load(LS.packCustom,{});// cat -> [labels]
+let timeOv=load('eu26.times',{}); // 'di-ii' -> 'HH:MM' user overrides (cascade downstream)
+let durOv=load('eu26.durmin',{}); // 'di-ii' -> minutes override (changing a duration pushes later start times)
+function parseDurMin(s){ if(!s) return null; const t=String(s).toLowerCase();
+  if(/half\s*day/.test(t)) return 240; if(/full\s*day|whole\s*day/.test(t)) return 480;
+  if(/evening/.test(t)) return 180; if(/flex/.test(t)) return 90;
+  const h=t.match(/(\d+(?:\.\d+)?)\s*h/), m=t.match(/(\d+)\s*m(?:in)?\b/); let v=0,f=false;
+  if(h){v+=Math.round(parseFloat(h[1])*60);f=true;} if(m){v+=parseInt(m[1]);f=true;} return f?v:null; }
+function fmtDurMin(m){ if(m==null) return ''; if(m<60) return m+' min'; const h=Math.floor(m/60),mm=m%60; return h+'h'+(mm?` ${mm}m`:''); }
+const ik=(di,ii)=>di+'|'+DAYS[di].items[ii].title; // STABLE per-item key (day order is fixed; survives row inserts)
+const effDurMin=(di,ii,label)=>{const k=ik(di,ii); return (k in durOv)?durOv[k]:parseDurMin(label);};
+const durLabel=(di,ii,label)=>{const k=ik(di,ii); return (k in durOv)?fmtDurMin(durOv[k]):label;};
+function onDurEdit(di,ii,val){ const newMin=parseInt(val); if(isNaN(newMin)) return;
+  const day=DAYS[di], old=effDurMin(di,ii, day.items[ii].dur||day.items[ii].travel||'');
+  durOv[ik(di,ii)]=newMin;
+  const delta=newMin-(old==null?newMin:old);
+  if(delta){ const _o=orderedIdx(di), _ps=_o.indexOf(ii); for(let _p=_ps+1;_p<_o.length;_p++){const j=_o[_p], itj=day.items[j]; if(isFixed(itj)) break; if(isClock(itj.t)) timeOv[ik(di,j)]=fromMin(toMin(effTime(di,j,itj.t))+delta);} }
+  save('eu26.durmin',durOv); save('eu26.times',timeOv); renderDays();
+}
+const isClock=t=>typeof t==='string'&&/^\d{1,2}:\d{2}$/.test(t);
+const pad2=t=>{const a=t.split(':'); return (a[0].length<2?'0'+a[0]:a[0])+':'+a[1];};
+const toMin=t=>{const a=pad2(t).split(':'); return (+a[0])*60+(+a[1]);};
+const fromMin=x=>{x=((x%1440)+1440)%1440; const h=Math.floor(x/60),m=x%60; return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;};
+const effTime=(di,ii,base)=>{const it=DAYS[di]&&DAYS[di].items[ii]; if(it&&isFixed(it)) return base; /* locked tickets always show their true time, ignoring any stale device override */ const k=ik(di,ii); return (k in timeOv)?timeOv[k]:base;};
+function onTimeEdit(di,ii,val){
+  if(!isClock(val)) return;
+  const day=DAYS[di], oldEff=effTime(di,ii,day.items[ii].t);
+  const delta=toMin(val)-toMin(oldEff);
+  timeOv[ik(di,ii)]=pad2(val);
+  if(delta){ const _o=orderedIdx(di), _ps=_o.indexOf(ii); for(let _p=_ps+1;_p<_o.length;_p++){const j=_o[_p], itj=day.items[j]; if(isFixed(itj)) break; if(isClock(itj.t)) timeOv[ik(di,j)]=fromMin(toMin(effTime(di,j,itj.t))+delta);} }
+  save('eu26.times',timeOv); renderDays();
+}
+function resetTimes(){timeOv={}; durOv={}; save('eu26.times',timeOv); save('eu26.durmin',durOv); renderDays();}
+function exportEdits(){ const o={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.indexOf('eu26.')===0) o[k]=localStorage.getItem(k);} const blob=new Blob([JSON.stringify(o,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='europe-trip-edits.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+function importEdits(file){ if(!file) return; const r=new FileReader(); r.onload=()=>{ try{ const o=JSON.parse(r.result); let n=0; Object.keys(o).forEach(k=>{ if(k.indexOf('eu26.')===0){ localStorage.setItem(k,o[k]); n++; } }); alert('Restored '+n+' saved settings. Reloading…'); location.reload(); }catch(e){ alert('Sorry — that file could not be read as a backup.'); } }; r.readAsText(file); }
+
+function bookOf(b){ return (b.id in bookState)?bookState[b.id]:b.s; }
+function paidOf(it){ return (it.id in paidState)?paidState[it.id]:it.paid; }
+/* ---- Currencies. Spend shows native (EUR/CHF/MYR); totals convert to MYR at these rates. ---- */
+const RATE={MYR:1, EUR:4.8, CHF:5.35};
+const SYM={MYR:'RM', EUR:'€', CHF:'CHF'};
+const curOf=e=>e.cur||(e.chf!=null?'CHF':(e.eur!=null?'EUR':'MYR'));
+const natBase=e=>e.chf!=null?+e.chf:(e.eur!=null?+e.eur:+e.rm);
+const rateOf=e=>{const nb=natBase(e); return nb?(+e.rm/nb):1;}; // preserves each line's original MYR
+function curForCC(c){ return c==='ch'?'CHF':((c==='my'||c==='ae')?'MYR':'EUR'); }
+function dayCur(d){ const cc=(d&&d.cc)||[]; return curForCC(cc[cc.length-1]||'it'); }
+// Pre-filled per-meal estimates (local currency, per person). Used as the default Spend for meal rows; editable & summed into the Food budget.
+const MEALEST={ EUR:{breakfast:8,lunch:18,dinner:35,gelato:5,snack:6,default:15}, CHF:{breakfast:12,lunch:30,dinner:55,gelato:6,snack:9,default:25}, MYR:{breakfast:20,lunch:40,dinner:70,gelato:15,snack:15,default:35} };
+function mealType(t){ t=String(t).toLowerCase(); if(t.includes('breakfast')||t.includes('brunch'))return'breakfast'; if(t.includes('lunch'))return'lunch'; if(t.includes('dinner'))return'dinner'; if(t.includes('gelato')||t.includes('dessert'))return'gelato'; if(t.includes('coffee')||t.includes('spritz')||t.includes('aperitivo')||t.includes('caffè')||t.includes('drinks'))return'snack'; return'default'; }
+function mealEst(di,ii){ const it=DAYS[di]&&DAYS[di].items[ii]; if(!it||it.k!=='meal') return null; const tbl=MEALEST[dayCur(DAYS[di])]||MEALEST.EUR; const v=tbl[mealType(it.title)]; return v!=null?v:tbl.default; }
+let costOv=load('eu26.costnat',{}); // id -> native-amount override (predefined lines)
+let posCost=load('eu26.posnat',{}); // 'di-ii' -> native amount (user-added rows)
+let posCur=load('eu26.poscur',{}); // 'di-ii' -> currency (defaults to the day's currency)
+const effNat=e=>{ if(!e) return 0; if(e.pos) return (posCost[e.k]!=null)?+posCost[e.k]:(e.def!=null?+e.def:0); return (e.id in costOv)?+costOv[e.id]:natBase(e); };
+const effRm=e=>{ if(!e) return 0; return e.pos ? effNat(e)*(RATE[e.cur]||1) : effNat(e)*rateOf(e); };
+function setCost(id,val){const v=parseFloat(val); if(isNaN(v)||v<0) return; costOv[id]=Math.round(v*100)/100; save('eu26.costnat',costOv); renderDays(); renderBudget();}
+function setPosCostKey(k,val){ if(val===''||val==null){ delete posCost[k]; delete posCur[k]; } else { const v=parseFloat(val); if(isNaN(v)||v<0) return; posCost[k]=Math.round(v*100)/100; if(!(k in posCur)) posCur[k]=dayCur(DAYS[+k.slice(0,k.indexOf('|'))]); } save('eu26.posnat',posCost); save('eu26.poscur',posCur); renderDays(); renderBudget(); }
+function setPosCost(di,ii,val){ setPosCostKey(ik(di,ii),val); }
+let noteOv=load('eu26.notes',{}); // 'di-ii' -> free-text note for that row
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function editNote(di,ii){ const k=ik(di,ii);
+  openNoteModal(noteOv[k]||'', val=>{ const t=val.replace(/[ \t]+\n/g,'\n').replace(/\s+$/,''); if(t) noteOv[k]=t; else delete noteOv[k]; save('eu26.notes',noteOv); renderDays(); });
+}
+function openNoteModal(initial,onSave){
+  const ov=document.createElement('div'); ov.className='note-modal';
+  ov.innerHTML=`<div class="note-box"><div class="note-h">Note for this stop</div><textarea class="note-ta" rows="5" placeholder="Type your note…  press Enter for a new line"></textarea><div class="note-hint">Enter = new line · ⌘/Ctrl+Enter saves · Esc cancels</div><div class="note-actions"><button class="note-cancel">Cancel</button><button class="note-save">Save</button></div></div>`;
+  document.body.appendChild(ov);
+  const ta=ov.querySelector('.note-ta'); ta.value=initial; ta.focus(); try{ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}
+  const close=()=>ov.remove(), submit=()=>{ onSave(ta.value); close(); };
+  ov.querySelector('.note-cancel').onclick=close;
+  ov.querySelector('.note-save').onclick=submit;
+  ov.onmousedown=e=>{ if(e.target===ov) close(); };
+  ta.onkeydown=e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){ e.preventDefault(); submit(); } else if(e.key==='Escape'){ e.preventDefault(); close(); } };
+}
+let orderOv=load('eu26.order',{}); // di -> [title,...] custom row order (lets you move rows up/down)
+function orderedIdx(di){ const items=DAYS[di].items, saved=orderOv[di]; if(!saved||!saved.length) return items.map((_,i)=>i);
+  const byT={}; items.forEach((it,i)=>{ if(!(it.title in byT)) byT[it.title]=i; }); const out=[],used=new Set();
+  saved.forEach(t=>{ if(t in byT && !used.has(byT[t])){ out.push(byT[t]); used.add(byT[t]); } }); items.forEach((_,i)=>{ if(!used.has(i)) out.push(i); }); return out; }
+const dmin=(di,p)=>{ const it=DAYS[di].items[p]; return effDurMin(di,p,it.dur||it.travel||'')||0; }; // minutes an item takes
+const hopMin=it=>(it.hop&&it.hop.t)?(parseDurMin(it.hop.t)||0):0; // walking/travel time to reach it
+const isAnchor=it=>isFixed(it)||!!it.mode; // booked OR a transit leg (flight/train/drive): own real clock time, never duration-chained
+// Re-time from startPos downward so each activity/meal begins when the previous one ends (+ walk); chaining resets at transit legs & bookings.
+function reflowFrom(di,startPos){ const order=orderedIdx(di), items=DAYS[di].items; let cursor=null;
+  for(let p=startPos-1;p>=0;p--){ const it=items[order[p]]; if(isAnchor(it)) break; const t=effTime(di,order[p],it.t); if(isClock(t)){ cursor=toMin(t)+dmin(di,order[p]); break; } }
+  for(let p=startPos;p<order.length;p++){ const j=order[p], it=items[j], t=effTime(di,j,it.t);
+    if(isAnchor(it)){ cursor=null; continue; }
+    if(!isClock(t)) continue;
+    if(cursor==null){ cursor=toMin(t)+dmin(di,j); continue; }
+    const start=cursor+hopMin(it); timeOv[ik(di,j)]=fromMin(start); cursor=start+dmin(di,j); }
+  save('eu26.times',timeOv); }
+function moveItem(di,ii,dir){ const order=orderedIdx(di), pos=order.indexOf(ii), np=pos+dir; if(np<0||np>=order.length) return;
+  const a=order[pos]; order[pos]=order[np]; order[np]=a; orderOv[di]=order.map(i=>DAYS[di].items[i].title); save('eu26.order',orderOv);
+  reflowFrom(di,np); renderDays(); }
+function sortDay(di){ const items=DAYS[di].items;
+  // 1) order rows by their current time (untimed rows stay attached to the stop above them)
+  let prev=-1; const sv=items.map((it,i)=>{ const t=effTime(di,i,it.t); if(isClock(t)){ prev=toMin(t); return prev*100; } return prev*100+50; });
+  const order=items.map((_,i)=>i).sort((x,y)=>(sv[x]-sv[y])||(x-y)); orderOv[di]=order.map(i=>items[i].title);
+  // 2) only push a stop later if it would overlap the previous one (respects durations + walks; keeps intended gaps; booked times anchor)
+  let cursor=null;
+  for(let p=0;p<order.length;p++){ const j=order[p], it=items[j], t=effTime(di,j,it.t);
+    if(isAnchor(it)){ cursor=null; continue; }
+    if(!isClock(t)) continue;
+    let start=toMin(t); if(cursor!=null){ const mn=cursor+hopMin(it); if(start<mn) start=mn; }
+    timeOv[ik(di,j)]=fromMin(start); cursor=start+dmin(di,j); }
+  save('eu26.order',orderOv); save('eu26.times',timeOv); renderDays(); }
+function isFixed(it){ return !!it.lock || !!(it.book && bookOf(it.book)===true); } // it.lock = confirmed ticket on file (permanently locked); else ANY booking marked done = fixed start time
+// Budget rows generated from the itinerary: every meal (pre-filled estimate) + any per-row cost you add. Skips items already in BUDGET to avoid double-counting.
+/* Per-day base location — labels each budget row with where you'll be. An item's own
+   `place` wins when set; otherwise this town-level fallback shows (esp. for Food rows). */
+const DAYBASE = ['Lucerne','Lucerne','Lungern → Grindelwald','Grindelwald → Interlaken','Lauterbrunnen Valley','Lakes Brienz & Thun','Interlaken → Zermatt','Zermatt','Montreux → Geneva','En route home'];
+function whereOf(di,it){ return (it&&it.place)||DAYBASE[di]||''; }
+function autoEntries(){ const out=[]; DAYS.forEach((d,di)=>{ d.items.forEach((it,ii)=>{
+    if(it.k==='warn'||COSTBYITIN[it.title]) return;
+    const k=ik(di,ii), def=mealEst(di,ii), pv=posCost[k];
+    if(pv==null && def==null) return; // no cost on this row
+    const cat = it.k==='meal'?'Food':(it.mode?'Local transport':'Activities');
+    out.push({cat,date:d.date,n:it.title,id:'pos:'+k,pos:true,k,def,cur:(posCur[k]||dayCur(d)),paid:false,est:true,where:whereOf(di,it)}); }); });
+  return out; }
+
+/* ============================= RENDER: status pill ============================= */
+function statusPill(b){
+  const s=bookOf(b);
+  const cls = s===true?'booked':(s==='deciding'?'deciding':'tobook');
+  const txt = s===true?('Booked'+(b.L?` · ${to12h(b.L)}`:'')):(s==='deciding'?'Deciding · decide today':'To book');
+  const ic  = s===true?'check':(s==='deciding'?'clock':'ticket');
+  return `<button class="status ${cls}" data-book="${b.id}">${svg(ic)}${txt}</button>`;
+}
+// Confirmed ticket on file: a non-clickable, permanently-locked status badge (no data-book ⇒ never bound, never cycles).
+function lockedPill(b){ return `<span class="status booked" style="cursor:default" title="Confirmed ticket on file — locked">${svg('lock')}Ticketed${b.L?` · ${to12h(b.L)}`:''}</span>`; }
+function cycleBook(id){
+  const cur = id in bookState ? bookState[id] : findDefaultBook(id);
+  const next = cur===false ? true : (cur===true ? 'deciding' : false); // to-book -> booked -> deciding -> to-book
+  bookState[id]=next; save(LS.book,bookState);
+  renderDays(); renderOverview();
+}
+function findDefaultBook(id){
+  for(const d of DAYS){ for(const it of (d.items||[])){ if(it.book&&it.book.id===id) return it.book.s; } if(d.stay&&d.stay.book&&d.stay.book.id===id) return d.stay.book.s; }
+  return false;
+}
+
+/* ============================= RENDER: itinerary ============================= */
+function renderItem(it,di,ii){
+  const cls=['item'];
+  if(it.mode) cls.push('transit'); else cls.push(it.k);
+  const ic = kindIcon(it.k,it);
+  let chips='';
+  if(it.book) chips+=it.lock?lockedPill(it.book):statusPill(it.book);
+  if(it.place) chips+=`<a class="maplink" href="${mapUrl(it.place)}" target="_blank" rel="noopener">${svg('pin')}Map</a>`;
+  const oi=OPENINFO[it.title];
+  if(oi&&oi.h) chips+=`<span class="chip open">${svg('check')}${to12h(oi.h)}</span>`;
+  if(it.mode){const _f=it.fare||(it.mode==='walk'?'free':''); if(_f) chips+=`<span class="chip fare">${svg(modeIcon(it.mode))}${_f}</span>`;}
+  chips+=`<button class="notebtn" data-note="${di}-${ii}">${svg('note')}Note</button>`;
+  chips+=`<span class="movegrp"><button class="movebtn" data-mv="-1" data-di="${di}" data-ii="${ii}" aria-label="Move up">↑</button><button class="movebtn" data-mv="1" data-di="${di}" data-ii="${ii}" aria-label="Move down">↓</button></span>`;
+  const ce=COSTBYITIN[it.title];
+  const fixed=isFixed(it);
+  const eff=effTime(di,ii,it.t);
+  const timeEl = (isClock(eff)&&!fixed)
+    ? `<input type="time" class="tedit" data-di="${di}" data-ii="${ii}" value="${pad2(eff)}" aria-label="Edit start time">`
+    : (eff?`<span class="time${fixed?' fixed':''}">${to12h(eff)}${fixed?svg('lock'):''}</span>`:'');
+  const baseDur = it.dur || it.travel || '';
+  let durCell='<div class="idur"></div>';
+  if(baseDur){
+    if(fixed && it.mode){
+      durCell=`<div class="idur transit"><span class="durrow">${svg(modeIcon(it.mode))}<span>${to12h(baseDur)}</span></span>${it.dist?`<small>${it.dist}</small>`:''}</div>`;
+    } else {
+      const cur=effDurMin(di,ii,baseDur)||0, h=Math.floor(cur/60), m=cur%60;
+      const hOpts=Array.from({length:13},(_,i)=>`<option value="${i}"${i===h?' selected':''}>${i}h</option>`).join('');
+      const mset=[...new Set([m,0,5,10,15,20,25,30,35,40,45,50,55])].sort((a,b)=>a-b);
+      const mOpts=mset.map(v=>`<option value="${v}"${v===m?' selected':''}>${v}m</option>`).join('');
+      durCell=`<div class="idur${it.mode?' transit':''} ed"><span class="durrow"><select class="duredit durh" data-di="${di}" data-ii="${ii}" aria-label="Hours">${hOpts}</select><select class="duredit durm" data-di="${di}" data-ii="${ii}" aria-label="Minutes">${mOpts}</select></span>${(!it.dur&&it.dist)?`<small>${it.dist}</small>`:''}</div>`;
+    }
+  }
+  let costCell='<div class="icost"></div>';
+  if(ce){const nat=effNat(ce), cur=curOf(ce), locked=paidOf(ce), st=locked?'paid':(ce.est?'est':'tobook');
+    costCell = locked
+      ? `<div class="icost ${st}">${SYM[cur]} ${fmt(nat)}<small>paid</small></div>`
+      : `<div class="icost ${st} ed"><span class="amtwrap"><span class="rmx">${SYM[cur]}</span><input type="number" inputmode="decimal" class="amtedit" data-id="${ce.id}" value="${nat}" min="0" step="1" aria-label="Edit ${it.title} cost"></span><small>${ce.est?'est':'to book'}</small></div>`;
+  } else if(it.k!=='warn'){
+    const k=ik(di,ii), pid='pos:'+k, pv=posCost[k], ppaid=(pid in paidState)?paidState[pid]:false, cur=posCur[k]||dayCur(DAYS[di]);
+    const def=mealEst(di,ii), eff=(pv!=null)?pv:def, has=eff!=null; // meals come pre-filled with an estimate
+    costCell = (has&&ppaid)
+      ? `<div class="icost paid">${SYM[cur]} ${fmt(eff)}<small>paid</small></div>`
+      : `<div class="icost ${has?'est':'empty'} ed"><span class="amtwrap"><span class="rmx">${SYM[cur]}</span><input type="number" inputmode="decimal" class="amtedit pos" data-k="${k}" value="${has?eff:''}" min="0" step="1" placeholder="+" aria-label="Cost for ${it.title}"></span>${has?'<small>est</small>':''}</div>`;
+  }
+  return `<div class="${cls.join(' ')}">
+    <div class="rail"><span class="dot">${svg(ic)}</span></div>
+    <div class="body">
+      ${it.hop?`<div class="hop">${svg(modeIcon(it.hop.mode||'walk'))}<span>${((m)=>m[0].toUpperCase()+m.slice(1))(it.hop.mode||'walk')} · ${it.hop.t}${it.hop.d?` · ${it.hop.d}`:''}${(it.hop.fare||it.hop.mode==='walk')?` · ${it.hop.fare||'free'}`:''}</span></div>`:''}
+      <div class="line1">${timeEl}<span class="ttl2">${to12h(it.title)}</span></div>
+      ${it.detail?`<div class="detail">${to12h(it.detail)}</div>`:''}
+      ${noteOv[ik(di,ii)]?`<div class="usernote">${svg('note')}<span class="utext">${esc(noteOv[ik(di,ii)])}</span><button class="ne" data-note="${di}-${ii}">edit</button></div>`:''}
+      ${chips?`<div class="chips">${chips}</div>`:''}
+      ${oi&&oi.c?`<div class="opencaution">${svg('info')}<span>${to12h(oi.c)}</span></div>`:''}
+      ${enrichPanel(it.title)}
+    </div>
+    ${durCell}
+    ${costCell}
+  </div>`;
+}
+function enrichPanel(title){
+  const e=ENRICH[title]; if(!e) return '';
+  const look=(e.look||[]).map(x=>`<div>${svg('eye')}<span>${to12h(x)}</span></div>`).join('');
+  const bd=(e.breakdown||[]).map(r=>`<div class="bd"><span class="bt">${r[0]}</span><span class="bv">${r[1]}</span></div>`).join('');
+  return `<details class="why"><summary>${svg('bulb')}Why go &amp; timing — my notes</summary>
+    <div class="wbody">
+      <div class="wstory">${to12h(e.story)}</div>
+      ${look?`<div class="wsub">Look for</div><div class="look">${look}</div>`:''}
+      ${bd?`<div class="wsub">Time breakdown</div>${bd}`:''}
+      ${e.take?`<div class="take"><b>My take:</b> ${to12h(e.take)}</div>`:''}
+    </div></details>`;
+}
+function renderStay(stay){
+  if(!stay) return '';
+  if(stay.free) return `<div class="free-stay">${svg('bed')} ${stay.free}</div>`;
+  let alts='';
+  if(stay.alts){
+    alts=`<details class="alt"><summary>Stays considered (${stay.alts.length})</summary>`+
+      stay.alts.map(a=>`<div class="alt-row${a.booked?' booked':''}"><span class="an">${a.n}</span><span class="ap">${a.p}</span></div>`).join('')+`</details>`;
+  }
+  return `<div class="stay">
+    <div class="row">
+      <span class="dot" style="color:var(--accent)">${svg('bed')}</span>
+      <div><div class="nm">${stay.nm}</div><div class="nt">${stay.nt||''}</div></div>
+      ${stay.rm?`<div class="price"><b>RM ${fmt(stay.rm)}</b><span>RM ${fmt(stay.night)}/nt</span></div>`:''}
+    </div>
+    <div class="chips" style="margin-top:9px">
+      ${stay.book?statusPill(stay.book):''}
+      ${stay.place?`<a class="maplink" href="${mapUrl(stay.place)}" target="_blank" rel="noopener">${svg('pin')}Map</a>`:''}
+    </div>
+  </div>${alts}`;
+}
+function flagsHtml(cc){return `<div class="flags">${cc.map(c=>`<span class="flag ${c}"></span>`).join('')}</div>`;}
+function renderDays(){
+  document.getElementById('days').innerHTML = DAYS.map((d,i)=>`
+    <article class="day" id="day-${i}">
+      <div class="day-head">
+        ${flagsHtml(d.cc)}
+        <div class="meta">
+          <div class="dt">${d.dow} · ${d.date}</div>
+          <div class="ttl">${d.title}</div>
+          ${d.sub?`<div class="sm">${to12h(d.sub)}</div>`:''}
+        </div>
+        <button class="sortbtn" data-sort="${i}" title="Reorder this day's rows by time">⇅ Time-sort</button>
+      </div>
+      <div class="tl"><div class="tlhead"><span></span><span></span><span class="thr">Duration</span><span class="thr">Spend</span></div>${orderedIdx(i).map(ii=>renderItem(d.items[ii],i,ii)).join('')}</div>
+      ${dayTotal(d,i)}
+      ${renderStay(d.stay)}
+    </article>`).join('');
+  bindBookButtons();
+  document.querySelectorAll('.tedit').forEach(inp=>{inp.onchange=()=>onTimeEdit(+inp.dataset.di,+inp.dataset.ii,inp.value);});
+  document.querySelectorAll('#days .amtedit:not(.pos)').forEach(inp=>inp.onchange=()=>setCost(inp.dataset.id,inp.value));
+  document.querySelectorAll('#days .amtedit.pos').forEach(inp=>inp.onchange=()=>setPosCostKey(inp.dataset.k,inp.value));
+  document.querySelectorAll('#days .idur.ed').forEach(cell=>{const hs=cell.querySelector('.durh'),ms=cell.querySelector('.durm'); if(!hs||!ms) return; const f=()=>onDurEdit(+hs.dataset.di,+hs.dataset.ii,(+hs.value)*60+(+ms.value)); hs.onchange=f; ms.onchange=f;});
+  document.querySelectorAll('#days [data-note]').forEach(b=>b.onclick=()=>{const p=b.dataset.note.split('-'); editNote(+p[0],+p[1]);});
+  document.querySelectorAll('#days .movebtn').forEach(b=>b.onclick=()=>moveItem(+b.dataset.di,+b.dataset.ii,+b.dataset.mv));
+  document.querySelectorAll('#days .sortbtn').forEach(b=>b.onclick=()=>sortDay(+b.dataset.sort));
+  spyDays();
+}
+function dayTotal(d,di){
+  const cs=[];
+  d.items.forEach((it,ii)=>{ const ce=COSTBYITIN[it.title]; if(ce){cs.push(ce); return;}
+    if(it.k==='warn') return; const k=ik(di,ii), def=mealEst(di,ii); if(posCost[k]!=null||def!=null) cs.push({pos:true,k,id:'pos:'+k,def,cur:(posCur[k]||dayCur(d))}); });
+  if(!cs.length) return '';
+  let tot=0, paid=0; const byCur={};
+  cs.forEach(e=>{ const rm=effRm(e), cur=e.pos?e.cur:curOf(e); tot+=rm; if(paidOf(e)) paid+=rm; byCur[cur]=(byCur[cur]||0)+effNat(e); });
+  const order=['EUR','CHF','MYR'];
+  const nat=order.filter(c=>byCur[c]).map(c=>`${SYM[c]} ${fmt(byCur[c])}`).join(' · ');
+  const rest=tot-paid;
+  return `<div class="daytotal">${nat?`<span class="dt-nat">${nat}</span>`:''}<b>≈ RM ${fmt(tot)}</b>${paid?` · <span class="p">${fmt(paid)} paid</span>`:''}${rest?` · <span class="u">${fmt(rest)} to come</span>`:''}</div>`;
+}
+function bindBookButtons(){
+  document.querySelectorAll('[data-book]').forEach(b=>b.onclick=()=>cycleBook(b.getAttribute('data-book')));
+}
+
+/* ============================= RENDER: overview ============================= */
+function countBooked(){
+  let total=0,booked=0;
+  const seen=new Set();
+  for(const d of DAYS){
+    for(const it of d.items){ if(it.book && !seen.has(it.book.id)){seen.add(it.book.id); total++; if(bookOf(it.book)===true) booked++;} }
+    if(d.stay&&d.stay.book&&!seen.has(d.stay.book.id)){seen.add(d.stay.book.id); total++; if(bookOf(d.stay.book)===true) booked++;}
+  }
+  return {total,booked};
+}
+/* ---- Route map data (real coords, drawn in travel order) ---- */
+const MAPNODES=[
+ {n:'Zürich',s:'arrive',lat:47.45,lon:8.56,lx:0,ly:-22,anc:'middle'},
+ {n:'Lucerne',s:'',lat:47.05,lon:8.31,lx:0,ly:34,anc:'middle'},
+ {n:'Grindelwald',s:'',lat:46.62,lon:8.04,lx:30,ly:6,anc:'start'},
+ {n:'Interlaken',s:'',lat:46.69,lon:7.87,lx:0,ly:-22,anc:'middle'},
+ {n:'Zermatt',s:'',lat:46.02,lon:7.75,lx:0,ly:34,anc:'middle'},
+ {n:'Montreux',s:'',lat:46.43,lon:6.91,lx:-8,ly:-18,anc:'end'},
+ {n:'Geneva',s:'depart',lat:46.24,lon:6.11,lx:0,ly:34,anc:'middle'}
+];
+const MSM=null;
+const MAPLEGS=[
+ {mode:'train',t:'~1h'},
+ {mode:'train',t:'~2h34'},
+ {mode:'train',t:'~40m'},
+ {mode:'train',t:'~2h15'},
+ {mode:'train',t:'~3h15'},
+ {mode:'train',t:'~1h10'}
+];
+function hav(a,b){const R=6371,r=x=>x*Math.PI/180;
+  const dLat=r(b.lat-a.lat),dLon=r(b.lon-a.lon);
+  const s=Math.sin(dLat/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLon/2)**2;
+  return Math.round(2*R*Math.asin(Math.sqrt(s)));}
+function mapSVG(){
+  const W=1000,H=470,padX=120,padT=72,padB=96;
+  const cl=Math.cos(46.7*Math.PI/180);
+  const N=MAPNODES;
+  const pj=p=>({x:p.lon*cl,y:-p.lat});
+  const P=N.map(pj), xs=P.map(p=>p.x), ys=P.map(p=>p.y);
+  const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
+  const sc=Math.min((W-2*padX)/(maxx-minx),(H-padT-padB)/(maxy-miny));
+  const usedW=(maxx-minx)*sc,usedH=(maxy-miny)*sc;
+  const ox=(W-usedW)/2-minx*sc, oy=padT+((H-padT-padB)-usedH)/2-miny*sc;
+  const X=p=>pj(p).x*sc+ox, Y=p=>pj(p).y*sc+oy;
+  const CH={n:'SWITZERLAND',lab:[47.35,8.4],pts:[[46.2,6.1],[46.5,6.6],[47.4,7.0],[47.6,7.6],[47.7,8.6],[47.4,9.5],[46.9,10.5],[46.2,9.0],[45.95,7.7],[46.4,6.9]]};
+  let geo='';
+  const d=CH.pts.map((p,i)=>`${i?'L':'M'} ${X({lat:p[0],lon:p[1]}).toFixed(1)} ${Y({lat:p[0],lon:p[1]}).toFixed(1)}`).join(' ')+' Z';
+  geo+=`<path d="${d}" fill="#b4532a" fill-opacity="0.03" stroke="#bcb09e" stroke-width="1.4" stroke-dasharray="2 6" stroke-linejoin="round"/>`;
+  geo+=`<text x="${X({lat:CH.lab[0],lon:CH.lab[1]}).toFixed(1)}" y="${Y({lat:CH.lab[0],lon:CH.lab[1]}).toFixed(1)}" text-anchor="middle" font-size="19" font-weight="700" letter-spacing="2" fill="#c8bcab">${CH.n}</text>`;
+  let lines='';
+  for(let i=0;i<N.length-1;i++) lines+=`<line x1="${X(N[i])}" y1="${Y(N[i])}" x2="${X(N[i+1])}" y2="${Y(N[i+1])}" stroke="#b4532a" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>`;
+  let labs='';
+  for(let i=0;i<MAPLEGS.length;i++){const a=N[i],b=N[i+1];const mx=(X(a)+X(b))/2,my=(Y(a)+Y(b))/2;
+    labs+=`<text x="${mx}" y="${my-9}" text-anchor="middle" font-size="21" font-weight="700" fill="#b4532a" style="paint-order:stroke;stroke:#fffdf9;stroke-width:5px">${MAPLEGS[i].t}</text>`;}
+  let pins='';
+  N.forEach((nd,i)=>{const x=X(nd),y=Y(nd);
+    pins+=`<circle cx="${x}" cy="${y}" r="15" fill="#b4532a"/><text x="${x}" y="${y+6}" text-anchor="middle" font-size="20" font-weight="800" fill="#fff">${i+1}</text>`+
+      `<text x="${x+nd.lx}" y="${y+nd.ly}" text-anchor="${nd.anc}" font-size="25" font-weight="750" fill="#211c16">${nd.n}</text>`+
+      (nd.s?`<text x="${x+nd.lx}" y="${y+nd.ly+22}" text-anchor="${nd.anc}" font-size="18" fill="#6f665a">${nd.s}</text>`:'');});
+  const kmU=hav(N[0],N[N.length-1])/Math.hypot(X(N[0])-X(N[N.length-1]),Y(N[0])-Y(N[N.length-1])), barU=100/kmU, bx=72, by=H-30;
+  const scale=`<line x1="${bx}" y1="${by}" x2="${bx+barU}" y2="${by}" stroke="#6f665a" stroke-width="3"/>`+
+    `<line x1="${bx}" y1="${by-7}" x2="${bx}" y2="${by+7}" stroke="#6f665a" stroke-width="3"/>`+
+    `<line x1="${bx+barU}" y1="${by-7}" x2="${bx+barU}" y2="${by+7}" stroke="#6f665a" stroke-width="3"/>`+
+    `<text x="${bx+barU/2}" y="${by-11}" text-anchor="middle" font-size="18" fill="#6f665a">≈ 100 km</text>`;
+  const comp=`<text x="${W-44}" y="46" text-anchor="middle" font-size="20" fill="#9a9082">N</text>`+
+    `<path d="M${W-44} 52 l-6 11 h12 z" fill="#9a9082"/>`;
+  return `<svg class="rmap" viewBox="0 0 ${W} ${H}" role="img" aria-label="Route map of the trip"><g id="rmapG">${geo}${lines}${scale}${comp}${labs}${pins}</g></svg>`;
+}
+function legsList(){
+  const ico=m=>svg(m==='train'?'train':m==='plane'?'plane':'car');
+  const row=(badge,fly,from,to,mode,t,d)=>`<div class="lrow"><span class="lbadge${fly?' fly':''}">${badge}</span>
+    <div class="lmain"><div class="lroute">${from} <span class="larr">→</span> ${to}</div>
+    <div class="lmeta">${ico(mode)} ${(x=>x[0].toUpperCase()+x.slice(1))(mode==='plane'?'flight':mode)} · ${t}${d?` · ${d}`:''}</div></div></div>`;
+  let h=row(svg('plane'),true,'Kuala Lumpur','Zürich','plane','~14h','via Abu Dhabi');
+  for(let i=0;i<MAPLEGS.length;i++) h+=row(`${i+1}`,false,MAPNODES[i].n,MAPNODES[i+1].n,'train',MAPLEGS[i].t,MAPLEGS[i].d||'');
+  h+=row(svg('plane'),true,'Geneva','Kuala Lumpur','plane','~16h','via Abu Dhabi');
+  return `<div class="legslist">${h}</div>`;
+}
+function renderOverview(){
+  const c=countBooked();
+  document.getElementById('overview').innerHTML=
+    `<h2>Route map</h2>`+
+    `<div class="rmap-wrap">${mapSVG()}<div class="rmap-zoom"><button data-z="in" aria-label="Zoom in">+</button><button data-z="out" aria-label="Zoom out">−</button><button data-z="reset" aria-label="Reset view">⟲</button></div></div>`+
+    `<div class="rmap-note">Drag to pan · scroll or use +/− to zoom. Pins sit at real geography (uniform scale = true distance); dotted lines are approximate country borders. Leg labels are <b>actual travel time</b>, not straight-line distance.</div>`+
+    `<h2 style="margin-top:16px">Travel between stops</h2>`+legsList()+
+    `<div class="stat-row" style="margin-top:14px">
+      <div class="stat"><span class="v">10 days</span><span class="k">12–21 Jun</span></div>
+      <div class="stat"><span class="v">6 bases</span><span class="k">Lucerne → Geneva</span></div>
+      <div class="stat"><span class="v">${c.booked}/${c.total}</span><span class="k">bookings done</span></div>
+    </div>`;
+  wireMap();
+}
+function wireMap(){
+  const svg=document.querySelector('.rmap'); if(!svg) return;
+  const g=svg.querySelector('#rmapG'); if(!g) return;
+  const vb=svg.viewBox.baseVal; let s=1,tx=0,ty=0; const MIN=0.7,MAX=5;
+  const apply=()=>{g.setAttribute('transform',`translate(${tx} ${ty}) scale(${s})`); svg.style.touchAction=s>1.02?'none':'';};
+  const clamp=v=>Math.max(MIN,Math.min(MAX,v));
+  const zoomAt=(cx,cy,f)=>{const ns=clamp(s*f),k=ns/s; tx=cx-(cx-tx)*k; ty=cy-(cy-ty)*k; s=ns; apply();};
+  const toVB=e=>{const r=svg.getBoundingClientRect(); return {x:(e.clientX-r.left)/r.width*vb.width,y:(e.clientY-r.top)/r.height*vb.height};};
+  svg.addEventListener('wheel',e=>{e.preventDefault(); const p=toVB(e); zoomAt(p.x,p.y,e.deltaY<0?1.15:1/1.15);},{passive:false});
+  let drag=null;
+  svg.addEventListener('pointerdown',e=>{if(s<=1.02)return; drag={x:e.clientX,y:e.clientY}; svg.setPointerCapture(e.pointerId); svg.style.cursor='grabbing';});
+  svg.addEventListener('pointermove',e=>{if(!drag)return; const r=svg.getBoundingClientRect(); tx+=(e.clientX-drag.x)*(vb.width/r.width); ty+=(e.clientY-drag.y)*(vb.height/r.height); drag={x:e.clientX,y:e.clientY}; apply();});
+  const end=()=>{drag=null; svg.style.cursor='';};
+  svg.addEventListener('pointerup',end); svg.addEventListener('pointercancel',end);
+  document.querySelectorAll('.rmap-zoom [data-z]').forEach(btn=>btn.onclick=()=>{const z=btn.getAttribute('data-z'); if(z==='reset'){s=1;tx=0;ty=0;apply();return;} zoomAt(vb.width/2,vb.height/2,z==='in'?1.3:1/1.3);});
+}
+
+/* ============================= RENDER: budget ============================= */
+function fmt(n){return (Math.round(n*100)/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});}
+/* ---- Food prices per base (web-researched 2025–26, per person, local currency) ---- */
+const FOODPRICES=[
+ {loc:'Lucerne',flag:'ch',casual:'CHF 30–50',dinner:'CHF 60–95',
+  rows:[['Espresso','CHF 4–5'],['Lake-view lunch dish','CHF 22–32'],['Rösti / sausage','CHF 24–34'],['Cheese fondue (pp)','CHF 26–34'],['Beer 0.5L','CHF 7–9'],['Coop/Migros sandwich','CHF 5–8']],
+  tip:'Both Coop & Migros are by the station for cheap self-catering (Migros sells NO alcohol — use Coop/Denner). Tap water is often NOT free — ask. No tipping needed.'},
+ {loc:'Bernese Oberland',flag:'ch',casual:'CHF 28–45',dinner:'CHF 55–85',
+  rows:[['Coffee','CHF 4–5'],['Mountain hut hot dish','CHF 22–32'],['Interlaken pizza/pasta','CHF 20–28'],['Beer 0.5L','CHF 6.50–9'],['Coop picnic lunch','CHF 6–10'],['Water 0.5L','CHF 2–3.50']],
+  tip:'Mountain restaurants add an altitude premium — pack a Coop/Migros picnic for First, the lakes & Lauterbrunnen. Carry a refillable bottle for the excellent tap water.'},
+ {loc:'Zermatt',flag:'ch',casual:'CHF 35–55',dinner:'CHF 70–110',
+  rows:[['Espresso','CHF 4.50–5'],['Sit-down lunch dish','CHF 24–35'],['Mountain rösti / main','CHF 30–50'],['Cheese fondue (pp)','CHF 28–38'],['Beer 0.5L','CHF 7.50–9'],['Self-cater: pasta/bread/water','CHF ~2 / 1–3 / 1']],
+  tip:'The priciest base — your <b>cook-at-the-apartment</b> plan (Arca has a kitchen) is the big saver. Migros & Coop are both in the village (Migros ~10% cheaper, no alcohol). Riffelhaus 1853 for the mountain lunch.'},
+ {loc:'Montreux',flag:'ch',casual:'CHF 30–50',dinner:'CHF 55–90',
+  rows:[['Café crème','CHF 4.50–6'],['Lakeside lunch','CHF 24–34'],['Filets de perche (lake fish)','CHF 30–42'],['Beer 0.5L','CHF 7–9'],['Bakery sandwich','CHF 5–8'],['Gelato','CHF 4–6']],
+  tip:'Try filets de perche by the lake. Grab a station-bakery lunch before the Geneva train. Service is included — round up.'}
+];
+/* per-day food estimate, split on travel days between the two places */
+const FOODCC={ it:{cur:'EUR',lo:45,hi:65,flag:'it'}, ch:{cur:'CHF',lo:45,hi:90,flag:'ch'}, fr:{cur:'EUR',lo:35,hi:55,flag:'fr'} };
+const CCNAME={ it:'Italy', ch:'Switzerland', fr:'France' };
+const FOODDAYS=[ /* one row per day in Switzerland; travel days are half (part) */
+ {date:'12 Jun',cc:'ch',ctx:'Arrive · Lucerne & Pilatus',part:true},
+ {date:'13 Jun',cc:'ch',ctx:'Stoos Ridge & Rigi'},
+ {date:'14 Jun',cc:'ch',ctx:'Lucerne → Grindelwald'},
+ {date:'15 Jun',cc:'ch',ctx:'Grindelwald First → Interlaken'},
+ {date:'16 Jun',cc:'ch',ctx:'Lauterbrunnen Valley'},
+ {date:'17 Jun',cc:'ch',ctx:'Lakes Brienz & Thun'},
+ {date:'18 Jun',cc:'ch',ctx:'Interlaken → Zermatt'},
+ {date:'19 Jun',cc:'ch',ctx:'Gornergrat & 5-Seenweg'},
+ {date:'20 Jun',cc:'ch',ctx:'Montreux → fly home',part:true}
+];
+function renderFoodPrices(){
+  let tLo=0,tHi=0;
+  const rows=FOODDAYS.map(r=>{ const c=FOODCC[r.cc], rate=RATE[c.cur]; let lo=c.lo,hi=c.hi; if(r.part){lo=Math.round(lo/2);hi=Math.round(hi/2);} tLo+=lo*rate; tHi+=hi*rate;
+    return `<div class="fpd"><div class="fpd-main"><span class="fpd-place"><span class="flag ${c.flag}"></span>${r.country||CCNAME[r.cc]}</span><span class="fpd-date">${r.date} · ${r.ctx}${r.part?' · ½ day':''}</span></div><div class="fpd-cost">${SYM[c.cur]} ${lo}–${hi}<small>≈ RM ${fmt(Math.round(lo*rate))}–${fmt(Math.round(hi*rate))}</small></div></div>`; }).join('');
+  const guide=FOODPRICES.map(f=>{ const pr=f.rows.map(x=>`<div class="fp-row"><span>${x[0]}</span><span class="fp-p">${x[1]}</span></div>`).join('');
+    return gsec('food',f.loc,`<div class="fp-avg"><div><span class="fp-k">Casual meal</span><span class="fp-v">${f.casual} pp</span></div><div><span class="fp-k">Mid-range dinner</span><span class="fp-v">${f.dinner} pp</span></div></div>${pr}<div class="ga-line"><b>Tips:</b> ${f.tip}</div>`,f.flag); }).join('');
+  document.getElementById('foodPrices').innerHTML=
+    `<h2 style="margin:20px 0 6px">Food — estimate per day</h2>`+
+    `<div class="rmap-note" style="margin-bottom:8px">Per person, eating out moderately. “Part-day” = a travel day split between two places (≈ half a day’s meals each). Zermatt is much cheaper if you cook at the apartment.</div>`+
+    `<div class="fpcard">${rows}<div class="fpd fpd-total"><div class="fpd-main"><span class="fpd-place">Whole-trip food</span><span class="fpd-date">eating out, per person</span></div><div class="fpd-cost">≈ RM ${fmt(Math.round(tLo))}–${fmt(Math.round(tHi))}<small>2 pax ≈ RM ${fmt(Math.round(tLo*2))}–${fmt(Math.round(tHi*2))}</small></div></div></div>`+
+    `<details class="alt" style="margin-top:14px"><summary>Price guide — what individual items cost per city</summary>${guide}</details>`;
+}
+function setBookingTime(di,ii,val){ if(!isClock(val)) return; timeOv[ik(di,ii)]=pad2(val); save('eu26.times',timeOv); renderDays(); renderBudget(); } // edit a booking time from the Budget → updates the itinerary
+function renderBudget(){
+  let total=0,paid=0,topay=0;
+  const allRows=BUDGET.concat(autoEntries());
+  allRows.forEach(it=>{ const rm=effRm(it); total+=rm; if(paidOf(it)) paid+=rm; else topay+=rm; });
+  const pct = total? Math.round(paid/total*100):0;
+  document.getElementById('btotals').innerHTML=`
+    <div class="bcard full"><div class="k">Total trip cost (2 pax)</div>
+      <div class="v">RM ${fmt(total)} <small>· RM ${fmt(total/2)} per pax</small></div>
+      <div class="bbar"><i style="width:${pct}%"></i></div>
+    </div>
+    <div class="bcard"><div class="k">Paid</div><div class="v" style="color:var(--ok)">RM ${fmt(paid)}</div></div>
+    <div class="bcard"><div class="k">Still to pay</div><div class="v" style="color:var(--warn)">RM ${fmt(topay)}</div></div>`;
+
+  const cats=[...new Set(allRows.map(b=>b.cat))];
+  document.getElementById('budgetList').innerHTML = cats.map(cat=>{
+    const inCat=allRows.filter(b=>b.cat===cat); const catRm=inCat.reduce((a,it)=>a+effRm(it),0);
+    const rows=inCat.map(it=>{
+      const rm=effRm(it), nat=effNat(it), cur=it.pos?it.cur:curOf(it), p=paidOf(it);
+      const pillCls=p?'booked':'tobook'; const pillTxt=p?'Paid':'To pay'; const pillIc=p?'check':'ticket';
+      const loc=it.itin?ITINLOC[it.itin]:null;
+      const where=it.where||(loc?whereOf(loc.di,DAYS[loc.di].items[loc.ii]):null);
+      const bt=loc?effTime(loc.di,loc.ii,DAYS[loc.di].items[loc.ii].t):null;
+      const timeCell=(loc&&isClock(bt))?` · <input type="time" class="btimeedit" data-di="${loc.di}" data-ii="${loc.ii}" value="${bt}" title="Booking time — edits the itinerary">`:'';
+      return `<div class="brow">
+        <div class="bp"><div class="bn">${it.n}${it.est?' <span style="color:var(--faint);font-weight:500">(est.)</span>':''}${(it.itin||it.pos)?' <span class="linked" title="Linked to the itinerary">↔ itinerary</span>':''}</div>
+          <div class="bd">${it.date}${timeCell}</div>
+          ${where?`<div class="bwhere">${svg('pin')}<span>${esc(where)}</span></div>`:''}
+          <div class="chips" style="margin-top:6px"><button class="status ${pillCls}" data-paid="${it.id}">${svg(pillIc)}${pillTxt}</button></div>
+        </div>
+        <div class="amt"><b><span class="rmx">${SYM[cur]}</span><input type="number" inputmode="decimal" class="amtedit${it.pos?' pos':''}" ${it.pos?`data-k="${it.k}"`:`data-id="${it.id}"`} value="${nat}" min="0" step="1" aria-label="Edit ${it.n} cost"></b>${cur==='MYR'?`<span>RM ${fmt(rm/2)}/pax</span>`:`<span class="eur">≈ RM ${fmt(rm)}</span>`}</div>
+      </div>`;
+    }).join('');
+    return `<div class="bcat"><h3><span>${cat}</span><span class="bcat-sum">RM ${fmt(catRm)}</span></h3>${rows}</div>`;
+  }).join('');
+
+  document.querySelectorAll('#budgetList [data-paid]').forEach(b=>b.onclick=()=>{
+    const id=b.getAttribute('data-paid');
+    const it=allRows.find(x=>x.id===id);
+    paidState[id]= !paidOf(it); save(LS.paid,paidState); renderBudget(); renderDays();
+  });
+  document.querySelectorAll('#budgetList .amtedit:not(.pos)').forEach(inp=>inp.onchange=()=>setCost(inp.dataset.id,inp.value));
+  document.querySelectorAll('#budgetList .amtedit.pos').forEach(inp=>inp.onchange=()=>setPosCostKey(inp.dataset.k,inp.value));
+  document.querySelectorAll('#budgetList .btimeedit').forEach(inp=>inp.onchange=()=>setBookingTime(+inp.dataset.di,+inp.dataset.ii,inp.value));
+
+  // shortlist reference
+  document.getElementById('altWrap').innerHTML=`<summary>Accommodation shortlist (reference)</summary>
+    <div class="bd" style="padding:6px 0 10px;color:var(--muted)">Green = booked. Others were considered.</div>
+    ${[['Lucerne · Hotel Monopol (booked)','RM 1,660',1],
+       ['Grindelwald · Sunstar Hotel & Spa (booked)','RM 2,109',1],
+       ['Interlaken · Hotel Blume','RM 2,691',0],['Interlaken · Hotel Central Continental','RM 3,478',0],['Interlaken · Essential by Dorint','RM 4,680',0],['Interlaken · Airbnb (kitchen)','RM 4,963',0],
+       ['Zermatt · Arca Aparthotel & Spa (booked)','RM 1,913',1],['Zermatt · Hotel Matterhorn Inn (Täsch)','RM 2,960',0],['Zermatt · Hotel Alphubel','RM 4,990',0],
+       ['Montreux · Freddie Mercury Hotel','RM 666',0]]
+       .map(r=>`<div class="alt-row${r[2]?' booked':''}"><span class="an">${r[0]}</span><span class="ap">${r[1]}</span></div>`).join('')}`;
+}
+
+/* ============================= RENDER: packing ============================= */
+function packKey(cat,label){return cat+'::'+label;}
+function renderPack(){
+  document.getElementById('packList').innerHTML = PACK.map((cat,ci)=>{
+    const custom=(packCustom[cat.c]||[]).map(l=>({l}));
+    const all=[...cat.items,...custom];
+    const done=all.filter(it=>packState[packKey(cat.c,it.l)]).length;
+    const rows=all.map(it=>{
+      const key=packKey(cat.c,it.l); const isDone=!!packState[key];
+      const isCustom=(packCustom[cat.c]||[]).includes(it.l);
+      return `<div class="pitem${isDone?' done':''}" data-key="${encodeURIComponent(key)}">
+        <span class="box">${svg('check')}</span>
+        <span class="lbl">${it.l}${it.s?`<small>${it.s}</small>`:''}</span>
+        ${isCustom?`<button class="rm" data-rm="${encodeURIComponent(cat.c)}|${encodeURIComponent(it.l)}" title="Remove">×</button>`:''}
+      </div>`;
+    }).join('');
+    return `<details class="pcat" open>
+      <summary>${cat.c}<span class="count">${done}/${all.length}</span></summary>
+      ${rows}
+      <div class="padd"><input type="text" placeholder="Add item…" data-add="${ci}"><button data-addbtn="${ci}">Add</button></div>
+    </details>`;
+  }).join('');
+
+  document.querySelectorAll('.pitem').forEach(el=>el.onclick=(e)=>{
+    if(e.target.closest('[data-rm]')) return;
+    const key=decodeURIComponent(el.getAttribute('data-key'));
+    packState[key]=!packState[key]; save(LS.pack,packState); renderPack();
+  });
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation();
+    const [cat,label]=b.getAttribute('data-rm').split('|').map(decodeURIComponent);
+    packCustom[cat]=(packCustom[cat]||[]).filter(x=>x!==label); save(LS.packCustom,packCustom);
+    delete packState[packKey(cat,label)]; save(LS.pack,packState); renderPack();
+  });
+  const addFn=(ci)=>{
+    const inp=document.querySelector(`[data-add="${ci}"]`); const v=inp.value.trim(); if(!v) return;
+    const cat=PACK[ci].c; packCustom[cat]=packCustom[cat]||[]; packCustom[cat].push(v); save(LS.packCustom,packCustom); renderPack();
+  };
+  document.querySelectorAll('[data-addbtn]').forEach(b=>b.onclick=()=>addFn(+b.getAttribute('data-addbtn')));
+  document.querySelectorAll('[data-add]').forEach(inp=>inp.onkeydown=(e)=>{if(e.key==='Enter')addFn(+inp.getAttribute('data-add'));});
+}
+
+/* ============================= RENDER: guide ============================= */
+function gline(type,html){
+  const ic={do:'check',dont:'cross',tip:'bulb',gen:'info',euro:'euro'}[type]||'info';
+  const cls={do:'do',dont:'dont',tip:'tip',euro:'gen'}[type]||'gen';
+  return `<div class="gline"><span class="gi ${cls}">${svg(ic)}</span><span>${to12h(html)}</span></div>`;
+}
+function gsec(icon,title,inner,flag){
+  return `<div class="gsec"><div class="gh"><span class="ic">${svg(icon)}</span>
+    <h3>${title}</h3>${flag?`<span class="flag ${flag}" style="margin-left:auto"></span>`:''}</div>${inner}</div>`;
+}
+function country(flag,name,dos,donts,tip){
+  return gsec('flag',name,
+    `<div class="gsub">Do</div>${dos.map(t=>gline('do',t)).join('')}
+     <div class="gsub">Don’t</div>${donts.map(t=>gline('dont',t)).join('')}
+     ${gline('euro',tip)}`, flag);
+}
+/* ---- Getting around (web-verified 2026 transport per base) ---- */
+const GETAROUND=[
+ {loc:'Lucerne',flag:'ch',ic:'train',
+  primary:'Walk the compact old town; use the lake boats and mountain railways for Pilatus, Rigi & Stoos. Everything radiates from Luzern HB.',
+  modes:[
+   {ic:'walk',m:'Walk',cost:'free',note:'Old town, Chapel Bridge & lakefront are all 5–15 min apart.'},
+   {ic:'boat',m:'Lake steamer (SGV)',cost:'free w/ pass',note:'Luzern → Alpnachstad / Weggis / Vitznau. Covered by DSP; HFC 50%.'},
+   {ic:'train',m:'Cogwheel / cable cars',cost:'HFC 50%',note:'Pilatus, Rigi & Stoos run on separate mountain fares.'},
+   {ic:'bus',m:'City bus',cost:'~CHF 3',note:'Rarely needed — the centre is walkable.'}
+  ],
+  pay:'Get a Swiss Half-Fare Card (CHF 137pp) — it halves nearly all trains, boats & most mountain railways for a month. Add a Day Saver Duo on your big travel days.',
+  uber:'No Uber. Taxis exist but are pricey; you won’t need one.',
+  verdict:'Walk the centre; HFC + lake boats for Pilatus & the Stoos/Rigi day. Don’t buy single mountain tickets blind — check the HFC price.'},
+ {loc:'Bernese Oberland',flag:'ch',ic:'train',
+  primary:'Interlaken is the hub between its two lakes; the BOB/WAB cog trains, gondolas & PostBus reach the valleys and peaks. Lake boats are free with a pass.',
+  modes:[
+   {ic:'train',m:'BOB / cog trains',cost:'HFC 50%',note:'Interlaken ↔ Lauterbrunnen / Grindelwald / Wengen.'},
+   {ic:'boat',m:'Lake Brienz & Thun boats',cost:'free w/ pass',note:'BLS — Iseltwald, Brienz, Spiez. FREE with STP/DSP.'},
+   {ic:'cablecar',m:'Gondolas',cost:'HFC 50%',note:'First, Schilthornbahn (Grütschalp closed — use Stechelberg).'},
+   {ic:'bus',m:'PostBus 141',cost:'free w/ pass',note:'Lauterbrunnen → Stechelberg for Mürren during the BLM closure.'}
+  ],
+  pay:'HFC 50% on trains, gondolas & PostBus; both lake boats are FREE with a pass. Your hotel Guest Card covers local valley buses.',
+  uber:'No Uber. Villages like Wengen & Mürren are car-free anyway — you arrive by train/gondola.',
+  verdict:'HFC for the trains & lifts; both lakes by boat in one day (Day 6) is exceptional value. Mind the Grütschalp closure routing.'},
+ {loc:'Zermatt',flag:'ch',ic:'train',
+  primary:'The village is 100% car-free and ~1.5 km end to end. Free e-bus for tired legs; cog railway & funiculars for the mountains.',
+  modes:[
+   {ic:'walk',m:'Walk',cost:'free',note:'~20–25 min across the whole village.'},
+   {ic:'bus',m:'E-bus',cost:'FREE',note:'Green & red lines around the village. No ticket.'},
+   {ic:'train',m:'Gornergrat / Sunnegga',cost:'HFC 50%',note:'The Matterhorn excursions; first cog 07:00.'},
+   {ic:'car',m:'E-taxi',cost:'CHF 15–30',note:'Bags or late nights only — combustion cars are banned.'}
+  ],
+  pay:'The e-bus is free; HFC halves Gornergrat & Sunnegga. You arrive by train from Visp (Matterhorn Gotthard Bahn).',
+  uber:'No Uber — electric taxis only.',
+  verdict:'Walk + free e-bus in the village; HFC for the 07:00 Gornergrat and the Sunnegga side of the 5-Seenweg.'},
+ {loc:'Montreux & Geneva',flag:'ch',ic:'train',
+  primary:'Montreux is a walkable lakeside promenade; the train hugs Lake Geneva to Geneva Airport. Bus or a lovely lakeside walk reaches Chillon.',
+  modes:[
+   {ic:'walk',m:'Walk',cost:'free',note:'Promenade, Freddie Mercury statue, → Chillon (45 min lakeside).'},
+   {ic:'bus',m:'Bus 201 → Chillon',cost:'~CHF 3',note:'~10 min from Montreux centre.'},
+   {ic:'train',m:'Montreux → Geneva Airport',cost:'free w/ DSP',note:'~1h 10m direct; FREE on a Day Saver Duo.'},
+   {ic:'train',m:'Geneva Airport (GVA)',cost:'—',note:'Be there ~3h before the 21:15 EY148. Station is under the terminal.'}
+  ],
+  pay:'A Day Saver Duo covers the Zermatt→Montreux→Geneva travel day. Store bags in a Montreux station locker while you do Chillon.',
+  uber:'Uber works in Geneva, but the train runs right into the airport — no need.',
+  verdict:'Walk Montreux; bus or stroll to Chillon; leave by ~17:00 for the airport — the GVA station is directly below departures.'}
+];
+function gAround(){
+  const cards=GETAROUND.map(g=>{
+    const modes=g.modes.map(m=>`<div class="ga-mode"><span class="gm-ic">${svg(m.ic)}</span>
+      <span><span class="gm-name">${m.m}</span><span class="gm-note">${to12h(m.note)}</span></span>
+      <span class="gm-cost">${m.cost}</span></div>`).join('');
+    return gsec(g.ic,g.loc,
+      `<div class="ga-primary">${to12h(g.primary)}</div>${modes}
+       <div class="ga-line"><b>Pay:</b> ${to12h(g.pay)}</div>
+       <div class="ga-line"><b>Ride-hailing:</b> ${to12h(g.uber)}</div>
+       <div class="take"><b>My pick:</b> ${to12h(g.verdict)}</div>`, g.flag);
+  }).join('');
+  return `<div class="ga-head">Getting around each base</div>${cards}`;
+}
+function renderGuide(){
+  const entry = gsec('shield','Entry & essentials', [
+    gline('gen','<b>Passport</b> — valid ≥3 months beyond 21 Jun & issued within the last 10 years.'),
+    gline('gen','<b>Visa</b> — none needed. Malaysian passport = visa-free Schengen, up to 90 days.'),
+    gline('gen','<b>ETIAS</b> — not required yet (EU launch expected ~Q4 2026). Nothing to apply for.'),
+    gline('tip','<b>EES is live (since 10 Apr 2026)</b> — expect a fingerprint + photo at <b>Zürich</b> (first Schengen entry). Queues can be long after a red-eye; have your onward train relaxed.'),
+    gline('gen','<b>Money</b> — Switzerland uses <b>CHF</b>, not euro. Cards work everywhere, but carry some francs for huts, lockers & small kiosks.'),
+    gline('gen','<b>Plugs</b> — Switzerland is <b>Type J</b>; a standard EU adapter may not fit Swiss sockets. Bring a Type J.'),
+    gline('tip','<b>eSIM</b> — buy one that <b>includes Switzerland</b>; many “EU” plans exclude it.'),
+    gline('tip','<b>Rail pass</b> — a <b>Half-Fare Card</b> (CHF 137pp) halves almost everything for a month; add a <b>Day Saver Duo</b> on the three big travel days (2, 4, 9). Reserve scenic seats where you can.'),
+    gline('gen','<b>Tap water</b> — excellent everywhere; refill at village fountains.')
+  ].join(''));
+
+  const swiss = country('ch','Switzerland — etiquette',
+    ['Be punctual — trains leave to the second; be on the platform early.',
+     'Greet shop & café staff; keep voices low on trains.',
+     'Carry some CHF and recycle/sort rubbish.',
+     'Validate/hold the right ticket — checks are frequent and fines steep.'],
+    ['Don’t expect it to be cheap — eating out adds up (cook at the Zermatt apartment to save).',
+     'Don’t jaywalk or litter.',
+     'Don’t plan loud nights — Sundays are very quiet and most shops shut.'],
+    'Tipping: not expected — round up for good service. Zermatt is car-free; you arrive by train.');
+
+  const stops = gsec('pin','Tips by stop', [
+    gline('tip','<b>Lucerne</b> — Do the Pilatus “Golden Round Trip” (boat up, cable car down). On the Stoos day, catch the <b>06:06 first train</b> — the ridge is best before afternoon cloud, then Rigi for sunset.'),
+    gline('tip','<b>Grindelwald / First</b> — Ride the activities in order: <b>Cliff Walk → Glider → gondola back up → Mountain Cart → Trottibike</b>, or you waste gondola rides. Brake gently on the Trottibike’s steep sections.'),
+    gline('tip','<b>Lauterbrunnen</b> — ⚠ The <b>Grütschalp cable car is closed</b> (13 Apr–10 Jul): reach Mürren via PostBus 141 → Stechelberg → Schilthornbahn. Leave Allmendhubel by ~16:45 for the last funicular down.'),
+    gline('tip','<b>Zermatt</b> — Take the <b>07:00 Gornergrat first train</b>, sit RIGHT for the Matterhorn; the Riffelsee mirror is calmest before 09:00. Pack swimwear for the 5-Seenweg (Grünsee & Leisee). Riffelberg buffet is closed in June — lunch at Riffelhaus 1853.'),
+    gline('tip','<b>Montreux → Geneva</b> — ⚠ Your <b>flight leaves Geneva 20 Jun 21:15</b>, so this is a day visit, not an overnight. Do Chillon, then leave Montreux by ~17:00 to reach GVA ~3h before the flight. Reconcile the Montreux hotel booking.')
+  ].join(''));
+
+  const cd=[
+    {when:'Now · ~1 day out',items:[
+      'Confirm the <b>Interlaken</b> hotel (3 nights) and <b>reconcile the Montreux hotel</b> vs the 20 Jun night flight.',
+      'Buy the <b>Half-Fare Card</b> + Day Saver Duos (Days 2, 4, 9).',
+      'Book / decide: Pilatus, Stoos, Grindelwald First activities, Gornergrat, Château de Chillon.',
+      'Buy an eSIM that <b>includes Switzerland</b>; tell your bank you’re travelling.',
+      'Pack a <b>Swiss Type J adapter</b>.']},
+    {when:'2 days out',items:[
+      'Etihad online check-in (opens ~48h before EY487).',
+      'Pack via the Packing tab; check the <b>Weather</b> tab and adjust layers (summits are cold).',
+      'Download offline Google Maps: Lucerne, Interlaken, Zermatt, Montreux.',
+      'Charge phone, camera & power bank; get some CHF cash.']},
+    {when:'Day before · 11 Jun',items:[
+      'Reach <b>KLIA T1</b> in good time for the <b>21:55 EY487</b>.',
+      'Final check: passport, cards, Swiss Type J adapter, rail pass, hotel confirmations.']}
+  ];
+  const countdown = gsec('bulb','Final-week countdown',
+    cd.map(b=>`<div class="gcount-head"><div class="gsub" style="margin-top:14px">${b.when}</div></div>`+
+      b.items.map(i=>gline('tip',i)).join('')).join(''));
+
+  document.getElementById('guide').innerHTML = entry+gAround()+swiss+stops+countdown;
+}
+
+/* ============================= VIEWS / NAV ============================= */
+function showView(v){
+  ['itin','budget','pack','weather','guide'].forEach(x=>{
+    document.getElementById('view-'+x).classList.toggle('on',x===v);
+    document.getElementById('tab-'+x).setAttribute('aria-selected',x===v);
+  });
+  document.getElementById('daystrip').style.display = v==='itin'?'block':'none';
+  window.scrollTo({top:0});
+}
+function renderDayStrip(){
+  document.getElementById('daystripScroll').innerHTML = DAYS.map((d,i)=>`
+    <div class="daychip" data-go="${i}"><div class="d">${d.dow}</div><div class="n">${d.date.split(' ')[0]}</div></div>`).join('');
+  document.querySelectorAll('[data-go]').forEach(c=>c.onclick=()=>{
+    const i=+c.getAttribute('data-go');
+    document.getElementById('day-'+i).scrollIntoView({behavior:'smooth',block:'start'});
+  });
+}
+function setStick(){
+  const h=document.querySelector('header.top').offsetHeight;
+  document.documentElement.style.setProperty('--stick',h+'px');
+  const ds=document.querySelector('.daystrip');
+  document.documentElement.style.setProperty('--stick2',(h+(ds?ds.offsetHeight:0))+'px');
+}
+// highlight current day chip on scroll
+let _dayObs=null;
+function spyDays(){
+  if(_dayObs) _dayObs.disconnect();
+  const chips=[...document.querySelectorAll('.daychip')];
+  _dayObs=new IntersectionObserver((es)=>{
+    es.forEach(e=>{ if(e.isIntersecting){ const i=+e.target.id.split('-')[1];
+      chips.forEach((c,ci)=>c.classList.toggle('active',ci===i)); } });
+  },{rootMargin:'-180px 0px -60% 0px',threshold:0});
+  DAYS.forEach((_,i)=>{const el=document.getElementById('day-'+i); if(el) _dayObs.observe(el);});
+}
+
+/* ============================= INIT ============================= */
+renderOverview();
+renderDays();
+renderBudget();
+renderFoodPrices();
+renderPack();
+renderGuide();
+renderWeather();
+renderDayStrip();
+setStick();
+spyDays();
+document.getElementById('resetTimes').onclick=()=>{ if(confirm('Reset all your TIME and DURATION edits back to the original plan?\n\nThis does NOT affect your spending edits or booking ticks. There is no need to “save” — every change is kept automatically on this device.')) resetTimes(); };
+document.getElementById('backupBtn').onclick=exportEdits;
+document.getElementById('restoreBtn').onclick=()=>document.getElementById('restoreFile').click();
+document.getElementById('restoreFile').onchange=e=>importEdits(e.target.files[0]);
+window.addEventListener('resize',setStick);
+</script>
+</body>
+</html>

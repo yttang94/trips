@@ -1,0 +1,1925 @@
+<!doctype html>
+<html lang="en">
+<head>
+<!--
+===============================================================================
+  TRAVEL COMPANION  ·  GUIDE FOR YOUR AI EDITOR (and you)
+  Read this before changing anything. It explains what is safe to edit and the
+  few rules that keep the app working and keep the user's saved data intact.
+===============================================================================
+
+  HOW IT'S BUILT
+  • One self-contained file. No build step, no server. Open it in a browser; it
+    works offline and saves the user's edits in that browser (localStorage).
+  • Everything you should change is plain DATA arrays near the top of <script>.
+    The code beneath them (functions named render*, effTime, reflow*, migrate*)
+    is the ENGINE. EDIT THE DATA. Leave the engine alone unless you truly intend
+    to change behaviour.
+
+  THE DATA (top of the <script> block)
+  • DAYS      the itinerary: each day, and each stop in it (time, title, detail,
+              place, etc.). This is the spine of the app.
+  • BUDGET    every fixed cost (flights, stays, trains, tickets). The single
+              source of truth for costs.
+  • ENRICH    optional "Why go and timing" panels, keyed by a stop's title.
+  • OPENINFO  optional opening-hours / caution chip, keyed by a stop's title.
+  • WEATHER, PACKING, GUIDE, DAYBASE, RATE  the other tabs and helpers; all data.
+
+  THE FOUR TABS (what the END USER does in the app)
+  • Itinerary  the day-by-day plan. The user can edit a stop's TIME and DURATION,
+               add a NOTE, and type a SPEND amount, unless the stop is locked.
+  • Budget     every cost. Food rows are generated automatically from the
+               itinerary; fixed costs come from the BUDGET list.
+  • Packing / Guide  checklists and reference text.
+
+  HOW EDITS FLOW BETWEEN PAGES  (the part people get wrong)
+  • MEAL / FOOD spend: typed on EITHER page and synced both ways. It starts as an
+    auto estimate (see MEALEST) and is saved against the stop. Editable in both.
+  • FIXED COSTS (tickets, trains, stays): defined ONCE in BUDGET. A budget line is
+    wired to a stop by its `itin:` value, which must EXACTLY equal that stop's
+    `title:`. The cost then also appears on that itinerary row.
+        paid:true   the cost is LOCKED (shows "paid", non-editable on both pages)
+        paid:false  the cost is editable on both pages, and stays in sync.
+  • TIMING is NOT in the budget. A stop's time lives in DAYS (its `t:`). Adding
+    `lock:true` to a stop marks it a confirmed ticket: the time becomes
+    non-editable (shows a small lock) and is shielded from auto-shifting. So:
+    a booked ticket = BUDGET line with paid:true (locks the cost)  PLUS  the
+    matching DAYS stop with lock:true (locks the time).
+
+  THE GOLDEN RULES (break these and the user loses saved data)
+  1. A stop's `title:` is its IDENTITY. Notes, time edits and spend are saved
+     against it. Prefer editing `detail:` over renaming `title:`. If you must
+     rename a title, add [dayIndex,'old title','new title'] to KEY_RENAMES.
+  2. A budget line's `id:` is ITS identity. The typed amount and paid state are
+     saved against it. Keep ids stable and unique; if one changes, add
+     ['old-id','new-id'] to ID_RENAMES.
+  3. A budget line's `itin:` must EXACTLY match the target stop's `title:`.
+  4. Anything the user types in the app ALWAYS wins over the file. Editing wording
+     or numbers in the file never overwrites their entries. Never clear a saved
+     value unless asked.
+
+  STARTING A BRAND-NEW TRIP (replacing all the data)?
+  • You are rebuilding DAYS and BUDGET from scratch in a fresh browser, so there
+    is no saved user data to protect. In that case you may EMPTY the KEY_RENAMES
+    and ID_RENAMES lists and ignore the rename rules; they only matter once the
+    user has typed things in and you later edit the file.
+  • Set RATE (each currency to the home currency) and every day's `cc:` (country
+    codes) so totals convert correctly. Keep every budget `id:` unique, and keep
+    each `itin:` equal to the stop `title:` it points at.
+===============================================================================
+-->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1f1b16" />
+<title>Europe 2026 · 12–24 June</title>
+<style>
+  :root{
+    --bg:#f6f2ec; --paper:#fffdf9; --ink:#211c16; --muted:#6f665a; --faint:#9a9082;
+    --line:#e7ded1; --line2:#efe8dc;
+    --accent:#b4532a;        /* terracotta */
+    --accent-soft:#f3e4da;
+    --ok:#3f6b4f;            /* booked / paid (sage) */
+    --ok-soft:#e3efe6;
+    --warn:#b07a12;          /* to-book / deciding (amber) */
+    --warn-soft:#f6ecd4;
+    --alert:#a83b2b;         /* conflicts */
+    --alert-soft:#f7e3df;
+    --it1:#2e8b57; --it2:#cf3030;  /* italy stripes */
+    --radius:16px;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono","JetBrains Mono",Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--sans); color:var(--ink); background:var(--bg);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  a{color:inherit}
+  /* Base icon size: every inline SVG defaults to 1em and never stretches.
+     Class rules like `.chip svg{width:13px}` have higher specificity and still win.
+     Without this, an SVG with a viewBox but no width/height fills its container. */
+  svg{width:1em; height:1em; flex:none; vertical-align:-.125em}
+ .wrap{max-width:760px; margin:0 auto; padding:0 16px}
+
+  /* ---------- Top bar ---------- */
+  header.top{
+    position:sticky; top:0; z-index:40; background:rgba(33,28,22,.92);
+    backdrop-filter:saturate(150%) blur(10px); color:#f6f2ec;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    padding:calc(env(safe-area-inset-top) + 10px) 0 0;
+  }
+ .top.wrap{padding-bottom:10px}
+ .brand{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+ .brand h1{font-size:18px; letter-spacing:-.02em; margin:0; font-weight:650}
+ .brand.sub{font-size:12px; color:#ccbfae; font-variant-numeric:tabular-nums}
+ .switch{display:flex; gap:4px; margin-top:10px; background:rgba(255,255,255,.07);
+    padding:4px; border-radius:12px; width:100%}
+ .switch button{
+    flex:1; appearance:none; border:0; background:transparent; color:#cfc3b2;
+    font:inherit; font-size:12.5px; font-weight:600; padding:8px 4px; border-radius:9px;
+    cursor:pointer; transition:transform.12s ease, background.18s ease, color.18s ease;
+  }
+ .switch button[aria-selected="true"]{background:var(--accent); color:#fff}
+ .switch button:active{transform:scale(.97)}
+
+  /* ---------- Day strip ---------- */
+ .daystrip{position:sticky; top:var(--stick,118px); z-index:30; background:var(--bg);
+    border-bottom:1px solid var(--line); margin-bottom:14px}
+ .daystrip.scroll{display:flex; gap:7px; overflow-x:auto; padding:10px 16px;
+    scrollbar-width:none; -ms-overflow-style:none}
+ .daystrip.scroll::-webkit-scrollbar{display:none}
+ .daychip{flex:0 0 auto; border:1px solid var(--line); background:var(--paper);
+    border-radius:11px; padding:6px 10px; min-width:50px; text-align:center; cursor:pointer;
+    transition:transform.12s ease, border-color.18s ease}
+ .daychip:active{transform:translateY(1px)}
+ .daychip.d{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+ .daychip.n{font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+ .daychip.active{border-color:var(--accent); background:var(--accent-soft)}
+ .daychip.active.n{color:var(--accent)}
+
+  section.view{display:none}
+  section.view.on{display:block}
+ .pad{padding-bottom:60px}
+
+  /* ---------- Overview / legs ---------- */
+ .overview{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; margin-bottom:16px}
+ .overview h2{margin:0 0 4px; font-size:13px; letter-spacing:.02em; text-transform:uppercase; color:var(--muted)}
+ .stat-row{display:flex; gap:18px; margin-top:8px; flex-wrap:wrap}
+ .stat{display:flex; flex-direction:column}
+ .stat.v{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+ .stat.k{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+ .legs{display:flex; gap:8px; overflow-x:auto; padding:12px 16px 4px; scrollbar-width:none}
+ .legs::-webkit-scrollbar{display:none}
+ .leg{flex:0 0 auto; background:var(--paper); border:1px solid var(--line); border-radius:12px;
+    padding:9px 11px; min-width:130px}
+ .leg.route{display:flex; align-items:center; gap:6px; font-weight:650; font-size:13px}
+ .leg.ico{color:var(--accent); display:inline-flex}
+ .leg.t{font-size:11px; color:var(--muted); margin-top:3px; font-variant-numeric:tabular-nums}
+
+  /* ---------- Day card ---------- */
+ .day{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius);
+    margin-bottom:16px; scroll-margin-top:170px}
+ .day-head{padding:14px 16px 12px; border-bottom:1px solid var(--line2);
+    display:flex; align-items:flex-start; gap:10px;
+    position:sticky; top:var(--stick2,172px); z-index:8; background:var(--paper); border-radius:var(--radius) var(--radius) 0 0}
+ .flags{display:flex; gap:3px; margin-top:3px}
+ .flag{width:18px; height:13px; border-radius:2px; border:1px solid rgba(0,0,0,.08); overflow:hidden; flex:0 0 auto}
+ .flag.it{background:linear-gradient(90deg,#2e8b57 33%,#fff 33% 66%,#cf3030 66%)}
+ .flag.ch{background:#d52b1e; position:relative}
+ .flag.ch::after{content:""; position:absolute; inset:0; background:
+     linear-gradient(#fff,#fff) center/8px 2.4px no-repeat,
+     linear-gradient(#fff,#fff) center/2.4px 8px no-repeat}
+ .flag.fr{background:linear-gradient(90deg,#2747a0 33%,#fff 33% 66%,#cf3030 66%)}
+ .flag.my{background:repeating-linear-gradient(#cc0001 0 1.8px,#fff 1.8px 3.6px)}
+ .flag.ae{background:linear-gradient(#00843d 33%,#fff 33% 66%,#000 66%)}
+ .day-head.meta{flex:1; min-width:0}
+ .day-head.dt{font-size:12px; color:var(--accent); font-weight:650; letter-spacing:.02em}
+ .day-head.ttl{font-size:18px; font-weight:700; letter-spacing:-.02em; margin:1px 0 0}
+ .day-head.sm{font-size:12.5px; color:var(--muted); margin-top:2px}
+
+  /* timeline */
+ .tl{padding:6px 16px 4px}
+ .item{display:grid; grid-template-columns:26px 1fr 84px 78px; gap:8px; padding:9px 0; position:relative}
+ .tlhead{display:grid; grid-template-columns:26px 1fr 84px 78px; gap:8px; padding:2px 0 6px}
+ .tlhead.thr{text-align:right; font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--faint)}
+ .idur{align-self:start; text-align:right; padding-top:3px; font-size:11px; line-height:1.3; color:var(--accent); font-variant-numeric:tabular-nums}
+ .idur svg{width:11px; height:11px; vertical-align:-1px; margin-right:2px}
+ .idur small{display:block; color:var(--muted); font-size:10px; margin-top:1px}
+ .item.transit.idur{color:#4b5563}
+ .idur.ed{display:flex; flex-direction:column; align-items:flex-end; gap:1px}
+ .durrow{display:inline-flex; align-items:center; gap:2px; justify-content:flex-end; max-width:100%}
+ .duredit{font-family:var(--sans); font-size:11px; font-weight:600; color:inherit; background:#fff;
+    border:1px solid var(--line); border-radius:5px; padding:1px 1px; -webkit-appearance:none; appearance:none; cursor:pointer; max-width:40px}
+ .duredit:focus{outline:1px solid var(--accent)}
+ .durrow{gap:3px}
+ .icost{align-self:start; text-align:right; font-family:var(--mono); font-size:12px; font-weight:700; padding-top:3px; line-height:1.25}
+ .icost small{display:block; font-family:var(--sans); font-size:9px; font-weight:600; letter-spacing:.02em; opacity:.85; margin-top:1px; line-height:1.2}
+ .icost.paid{color:var(--ok)}.icost.tobook{color:var(--warn)}.icost.est{color:#9a9082}
+ .icost.ed{display:flex; flex-direction:column; align-items:flex-end; gap:1px}
+ .amtwrap{display:inline-flex; align-items:center; gap:2px}
+ .rmx{font-family:var(--sans); font-size:9px; font-weight:700; color:var(--muted)}
+ .amtedit{width:50px; font-family:var(--mono); font-size:12px; font-weight:700; color:inherit; background:#fff;
+    border:1px solid var(--line); border-radius:6px; padding:1px 4px; text-align:right;
+    -webkit-appearance:none; -moz-appearance:textfield; appearance:none}
+ .amtedit::-webkit-outer-spin-button,.amtedit::-webkit-inner-spin-button{-webkit-appearance:none; margin:0}
+ .brow.amt b.amtedit{width:62px; font-size:14px}
+ .icost.empty.amtedit{border-style:dashed; background:transparent; color:var(--faint)}
+ .icost.empty.rmx{color:var(--faint)}
+ .amtedit.pos::placeholder{color:var(--faint); font-weight:700}
+ .time.fixed{opacity:.9}.time.fixed svg{width:10px; height:10px; margin-left:3px; opacity:.5; vertical-align:0}
+ .linked{font-size:9.5px; font-weight:600; color:var(--accent); background:var(--accent-soft); border-radius:5px; padding:0 5px; margin-left:5px; white-space:nowrap}
+ .daytotal{display:flex; justify-content:flex-end; align-items:baseline; gap:8px; flex-wrap:wrap;
+    padding:10px 16px; border-top:1px solid var(--line2); font-size:11.5px; color:var(--muted)}
+ .daytotal b{font-family:var(--mono); font-size:13px; color:var(--ink)}
+ .daytotal.dt-nat{font-family:var(--mono); font-weight:700; color:var(--ink); margin-right:8px}
+ .daytotal.p{color:var(--ok); font-weight:700}.daytotal.u{color:var(--warn); font-weight:700}
+ .item +.item{border-top:1px solid var(--line2)}
+ .rail{display:flex; flex-direction:column; align-items:center; padding-top:2px}
+ .rail.dot{width:26px; height:26px; border-radius:8px; display:flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent); flex:0 0 auto}
+ .item.transit.dot{background:#eef0f2; color:#4b5563; border-radius:50%}
+ .item.warn.dot{background:var(--alert-soft); color:var(--alert)}
+ .item.meal.dot{background:#f1ece2; color:#7a6a4a}
+ .item.buffer.dot{background:#eef1ec; color:#5c6b58}
+ .body.line1{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap}
+ .time{font-family:var(--mono); font-size:12px; color:var(--accent); font-weight:600; flex:0 0 auto}
+ .item.transit.time{color:#4b5563}
+ .tedit{flex:0 0 auto; font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent);
+    background:var(--accent-soft); border:1px solid #ecd9cd; border-radius:7px; padding:1px 5px; cursor:pointer; -webkit-appearance:none; appearance:none; min-width:0}
+ .tedit::-webkit-calendar-picker-indicator{opacity:.4; cursor:pointer; margin-left:2px}
+ .item.transit.tedit{color:#4b5563; background:#eef0f2; border-color:#e0e3e6}
+ .tspent{margin-left:auto; display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600;
+    color:var(--accent); white-space:nowrap; font-variant-numeric:tabular-nums; flex:0 0 auto}
+ .tspent svg{width:12px; height:12px}
+ .item.transit.tspent{color:#4b5563}
+ .resetbtn{font:inherit; font-size:12px; font-weight:600; color:var(--muted); background:var(--paper);
+    border:1px solid var(--line); border-radius:8px; padding:5px 11px; cursor:pointer}
+ .resetbtn:active{transform:translateY(1px)}
+ .ttl2{font-weight:600; font-size:14.5px; letter-spacing:-.01em}
+ .item.warn.ttl2{color:var(--alert)}
+ .detail{font-size:13px; color:var(--muted); margin-top:3px}
+ .hop{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:var(--muted);
+    background:#f1ede6; border:1px solid var(--line); border-radius:999px; padding:2px 8px; margin-bottom:7px; font-variant-numeric:tabular-nums}
+ .hop svg{width:12px; height:12px; color:var(--accent)}
+ .chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center}
+ .chip{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600;
+    padding:3px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); background:#fff;
+    font-variant-numeric:tabular-nums}
+ .chip.dur{border-color:var(--accent-soft); background:var(--accent-soft); color:var(--accent)}
+ .chip.fare{border-color:#e3e6e9; background:#f3f5f7; color:#475569}
+ .notebtn{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600; padding:3px 8px; border-radius:999px; border:1px dashed var(--line); color:var(--muted); background:#fff; cursor:pointer}
+ .notebtn svg{width:13px; height:13px}
+ .notebtn:active{transform:translateY(1px)}
+ .movegrp{display:inline-flex; gap:3px}
+ .movebtn{width:24px; height:24px; border:1px solid var(--line); background:#fff; border-radius:7px; color:var(--muted); font-size:13px; font-weight:700; line-height:1; cursor:pointer; padding:0}
+ .movebtn:active{transform:translateY(1px)}
+ .sortbtn{margin-left:auto; flex:none; align-self:flex-start; font:inherit; font-size:11px; font-weight:600; color:var(--muted); background:var(--paper); border:1px solid var(--line); border-radius:8px; padding:4px 8px; cursor:pointer; white-space:nowrap}
+ .sortbtn:active{transform:translateY(1px)}
+ .usernote{display:flex; align-items:flex-start; gap:7px; margin-top:7px; font-size:12.5px; line-height:1.45; color:#7a5a12; background:#fffaf0; border:1px solid #efe2c4; border-radius:8px; padding:6px 9px}
+ .usernote svg{width:13px; height:13px; margin-top:2px; color:var(--warn); flex:none}
+ .usernote.ne{margin-left:auto; border:0; background:transparent; color:var(--faint); font:inherit; font-size:11px; cursor:pointer; flex:none}
+ .usernote.utext{white-space:pre-wrap; word-break:break-word; flex:1; min-width:0}
+  /* multi-line note editor modal */
+ .note-modal{position:fixed; inset:0; z-index:100; background:rgba(33,28,22,.45); display:flex; align-items:center; justify-content:center; padding:18px}
+ .note-box{background:var(--paper); border:1px solid var(--line); border-radius:14px; width:100%; max-width:460px; padding:14px; box-shadow:0 10px 34px rgba(0,0,0,.28)}
+ .note-h{font-size:12px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:9px}
+ .note-ta{width:100%; font:inherit; font-size:14px; line-height:1.5; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px; resize:vertical; min-height:104px; box-sizing:border-box}
+ .note-ta:focus{outline:2px solid var(--accent); outline-offset:0}
+ .note-hint{font-size:11px; color:var(--faint); margin-top:6px}
+ .note-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:10px}
+ .note-actions button{font:inherit; font-size:13px; font-weight:650; border-radius:9px; padding:8px 14px; cursor:pointer; border:1px solid var(--line); background:var(--paper); color:var(--ink)}
+ .note-actions button:active{transform:translateY(1px)}
+ .note-actions.note-save{background:var(--accent); color:#fff; border-color:var(--accent)}
+ .chip.travel{border-color:#e3e6e9; background:#f3f5f7; color:#475569}
+ .chip svg{width:13px; height:13px}
+ .maplink{display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:600;
+    padding:3px 8px; border-radius:999px; border:1px solid var(--line); color:var(--ink); background:#fff;
+    text-decoration:none; transition:transform.1s ease, background.15s}
+ .maplink:active{transform:translateY(1px)}
+ .maplink svg{width:13px;height:13px; color:var(--accent)}
+
+  /* status toggle button */
+ .status{appearance:none; font:inherit; cursor:pointer; display:inline-flex; align-items:center; gap:5px;
+    font-size:11.5px; font-weight:700; padding:4px 9px; border-radius:999px; border:1px solid transparent;
+    transition:transform.1s ease}
+ .status:active{transform:scale(.96)}
+ .status svg{width:13px; height:13px}
+ .status.booked{background:var(--ok-soft); color:var(--ok); border-color:#cbe2d1}
+ .status.tobook{background:var(--warn-soft); color:var(--warn); border-color:#ecddb6}
+ .status.deciding{background:var(--warn-soft); color:var(--warn); border-color:#ecddb6; border-style:dashed}
+
+  /* stay strip */
+ .stay{margin:2px 16px 14px; border:1px solid var(--line); border-radius:12px; padding:11px 12px;
+    background:linear-gradient(180deg,#fffdf9,#fbf7f0)}
+ .stay.row{display:flex; align-items:center; gap:8px}
+ .stay.nm{font-weight:650; font-size:14px}
+ .stay.nt{font-size:12px; color:var(--muted); margin-top:3px}
+ .stay.price{margin-left:auto; text-align:right; font-variant-numeric:tabular-nums}
+ .stay.price b{font-size:14px}.stay.price span{display:block; font-size:11px; color:var(--muted)}
+ .free-stay{color:var(--muted); font-size:13px; padding:0 16px 14px}
+
+  details.alt{margin:0 16px 14px; border:1px dashed var(--line); border-radius:12px; padding:0 12px}
+  details.alt summary{cursor:pointer; font-size:12.5px; font-weight:650; color:var(--muted); padding:10px 0; list-style:none}
+  details.alt summary::-webkit-details-marker{display:none}
+  details.alt[open] summary{border-bottom:1px solid var(--line2)}
+ .alt-row{display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--line2); font-size:13px}
+ .alt-row:last-child{border-bottom:0}
+ .alt-row.an{flex:1}.alt-row.ap{font-family:var(--mono); font-size:12px; color:var(--muted); text-align:right; white-space:nowrap}
+ .alt-row.booked.an{color:var(--ok); font-weight:650}
+
+  /* ---------- Budget ---------- */
+ .btotals{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px}
+ .bcard{background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:13px}
+ .bcard.k{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted)}
+ .bcard.v{font-size:21px; font-weight:750; font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin-top:3px; font-family:var(--mono)}
+ .bcard.v small{font-size:12px; font-weight:600; color:var(--muted)}
+ .bcard.full{grid-column:1/-1}
+ .bbar{height:8px; border-radius:999px; background:var(--warn-soft); overflow:hidden; margin-top:9px}
+ .bbar i{display:block; height:100%; background:var(--ok); border-radius:999px}
+ .bcat{margin-top:20px}
+ .bcat h3{position:sticky; top:var(--stick,118px); z-index:6; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    font-size:12.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:#fff;
+    margin:0 0 8px; padding:8px 12px; border-radius:9px; background:var(--accent); box-shadow:0 1px 4px rgba(0,0,0,.12)}
+ .bcat h3.bcat-sum{font-family:var(--mono); font-size:12px; font-weight:700; color:#fff; opacity:.92; letter-spacing:0}
+ .bd.btimeedit{font-family:var(--mono); font-size:11px; font-weight:700; color:var(--accent); border:1px solid var(--line); border-radius:6px; padding:1px 4px; margin-left:3px; background:#fff; cursor:pointer; vertical-align:middle}
+ .brow{display:grid; grid-template-columns:1fr auto; gap:6px 10px; align-items:center;
+    padding:11px 0; border-top:1px solid var(--line2)}
+ .brow:first-of-type{border-top:0}
+ .brow.bp{min-width:0}
+ .brow.bn{font-size:14px; font-weight:600}
+ .brow.bd{font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums}
+ .brow.bwhere{display:flex; align-items:flex-start; gap:4px; font-size:12px; color:var(--muted); margin-top:4px; line-height:1.35; word-break:break-word}
+ .brow.bwhere svg{width:12px; height:13px; color:var(--accent); flex:none; margin-top:1px}
+ .brow.amt{font-family:var(--mono); text-align:right; font-variant-numeric:tabular-nums}
+ .brow.amt b{font-size:14px}.brow.amt span{display:block; font-size:11px; color:var(--muted)}
+ .brow.amt.eur{color:var(--faint); font-size:11px}
+ .brow.struck.bn{color:var(--faint)}
+  /* phone readability: roomier rows, clearer name + location */
+  @media (max-width:480px){
+   .wrap{padding:0 13px}
+   .brow{padding:13px 0; gap:5px 9px}
+   .brow.bn{font-size:14.5px; line-height:1.32}
+   .brow.bd{font-size:12px}
+   .brow.bwhere{font-size:12.5px; color:#5f5648}
+   .brow.amt b{font-size:15px}
+   .bcat h3{font-size:12px; letter-spacing:.04em}
+   .linked{font-size:10px; padding:0 4px}
+  }
+
+  /* ---------- Packing ---------- */
+ .pcat{margin-bottom:8px; background:var(--paper); border:1px solid var(--line); border-radius:14px; overflow:hidden}
+ .pcat > summary{cursor:pointer; list-style:none; padding:13px 14px; font-weight:650; font-size:14.5px;
+    display:flex; align-items:center; gap:8px}
+ .pcat > summary::-webkit-details-marker{display:none}
+ .pcat > summary.count{margin-left:auto; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; font-weight:600}
+ .pitem{display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-top:1px solid var(--line2); cursor:pointer}
+ .pitem.box{width:20px; height:20px; border-radius:6px; border:1.6px solid var(--line); flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center; margin-top:1px; transition:.15s}
+ .pitem.done.box{background:var(--ok); border-color:var(--ok); color:#fff}
+ .pitem.done.lbl{color:var(--faint); text-decoration:line-through}
+ .pitem.lbl{font-size:14px}
+ .pitem.lbl small{display:block; color:var(--muted); font-size:11.5px; text-decoration:none}
+ .padd{display:flex; gap:8px; padding:10px 14px; border-top:1px solid var(--line2)}
+ .padd input{flex:1; border:1px solid var(--line); border-radius:9px; padding:8px 10px; font:inherit; font-size:14px; background:#fff}
+ .padd button{border:0; background:var(--accent); color:#fff; font:inherit; font-weight:650; border-radius:9px; padding:8px 12px; cursor:pointer}
+ .pitem.rm{margin-left:auto; color:var(--faint); border:0; background:transparent; cursor:pointer; padding:2px; font-size:16px; line-height:1}
+
+  /* ---------- Guide ---------- */
+ .gsec{background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:14px 15px; margin-bottom:14px}
+ .gsec.gh{display:flex; align-items:center; gap:9px; margin-bottom:10px}
+ .gsec.gh.ic{width:30px; height:30px; border-radius:9px; background:var(--accent-soft); color:var(--accent);
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto}
+ .gsec.gh h3{margin:0; font-size:16px; letter-spacing:-.01em}
+ .gline{display:grid; grid-template-columns:18px 1fr; gap:9px; padding:7px 0; font-size:13.5px}
+ .gline +.gline{border-top:1px solid var(--line2)}
+ .gline.gi{margin-top:2px; display:flex}
+ .gline b{font-weight:650}
+ .gi.do{color:var(--ok)}.gi.dont{color:var(--alert)}.gi.tip{color:var(--accent)}.gi.gen{color:var(--muted)}
+ .gline svg{width:16px;height:16px}
+ .gtwo{display:grid; grid-template-columns:1fr; gap:0}
+ .gsub{font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:12px 0 2px; font-weight:700}
+ .gtag{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:650; color:var(--muted)}
+ .gtag.flag{width:20px;height:14px}
+ .ga-head{font-size:15px; font-weight:750; letter-spacing:-.01em; color:var(--ink); margin:4px 2px 8px}
+ .ga-primary{font-size:13px; color:var(--ink); line-height:1.55; margin:0 0 8px}
+ .ga-mode{display:grid; grid-template-columns:16px 1fr auto; gap:9px; align-items:start; padding:8px 0; border-top:1px solid var(--line2); font-size:12.5px}
+ .ga-mode:first-of-type{border-top:0}
+ .ga-mode.gm-ic{color:var(--accent); margin-top:2px}
+ .ga-mode.gm-name{font-weight:650}
+ .ga-mode.gm-note{display:block; color:var(--muted); margin-top:1px; line-height:1.45}
+ .ga-mode.gm-cost{font-family:var(--mono); font-size:11px; color:var(--muted); text-align:right; white-space:nowrap; padding-top:1px}
+ .ga-line{font-size:12px; color:var(--muted); line-height:1.5; margin-top:8px}
+ .ga-line b{color:var(--ink)}
+ .wpack{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
+ .wpill{font-size:11px; font-weight:600; color:var(--muted); background:#f1ede6; border:1px solid var(--line); border-radius:999px; padding:3px 8px}
+ .chip.open{border-color:#cbe2d1; background:var(--ok-soft); color:var(--ok)}
+ .opencaution{display:grid; grid-template-columns:15px 1fr; gap:7px; align-items:start; margin-top:7px;
+    font-size:11.5px; line-height:1.45; color:#7a5a12; background:var(--warn-soft); border:1px solid #ecddb6; border-radius:9px; padding:7px 9px}
+ .opencaution svg{width:13px; height:13px; margin-top:2px; color:var(--warn)}
+ .gcount-head{display:flex; align-items:baseline; gap:8px}
+ .gcount-head.when{margin-left:auto; font-size:11.5px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.04em}
+
+  /* route map */
+ .rmap{width:100%; height:auto; display:block; font-family:var(--sans); margin:6px 0 4px;
+    background:#fbf7f0; border:1px solid var(--line); border-radius:12px}
+ .rmap-note{font-size:11px; color:var(--faint); line-height:1.5; margin:2px 2px 0}
+ .rmap-wrap{position:relative}
+ .rmap-zoom{position:absolute; right:9px; bottom:9px; display:flex; flex-direction:column; gap:6px}
+ .rmap-zoom button{width:32px; height:32px; border-radius:9px; border:1px solid var(--line); background:rgba(255,253,249,.95);
+    color:var(--ink); font-size:18px; font-weight:700; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 1px 3px rgba(0,0,0,.08); -webkit-tap-highlight-color:transparent}
+ .rmap-zoom button:active{transform:translateY(1px)}
+ .legslist{display:grid; margin:6px 0 2px}
+ .lrow{display:grid; grid-template-columns:26px 1fr; gap:11px; align-items:center; padding:9px 0; border-top:1px solid var(--line2)}
+ .lrow:first-child{border-top:0}
+ .lbadge{width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff; font-weight:800;
+    font-size:12px; display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums}
+ .lbadge.fly{background:#eef0f2; color:#4b5563}
+ .lbadge svg{width:14px; height:14px}
+ .lroute{font-weight:650; font-size:14px}
+ .larr{color:var(--accent)}
+ .lmeta{font-size:12px; color:var(--muted); display:flex; align-items:center; gap:5px; margin-top:2px; font-variant-numeric:tabular-nums}
+ .lmeta svg{width:13px; height:13px; color:var(--accent)}
+ .ltrip{font-size:12px; color:var(--muted); padding:9px 0 0; margin-top:2px; border-top:1px solid var(--line2);
+    display:flex; flex-wrap:wrap; gap:3px 6px; align-items:center}
+ .ltrip svg{width:13px; height:13px; color:var(--accent)}
+
+  /* expandable 'why go & timing' (my recommendations) */
+ .why{margin-top:9px; border:1px solid var(--accent-soft); border-radius:11px; background:#fffaf6; overflow:hidden}
+ .why>summary{cursor:pointer; list-style:none; padding:8px 11px; font-size:12.5px; font-weight:700; color:var(--accent);
+    display:flex; align-items:center; gap:7px}
+ .why>summary::-webkit-details-marker{display:none}
+ .why>summary svg{width:15px; height:15px}
+ .why>summary::after{content:"›"; margin-left:auto; transition:transform.2s ease; font-size:16px; line-height:1}
+ .why[open]>summary::after{transform:rotate(90deg)}
+ .why.wbody{padding:0 12px 12px}
+ .why.wstory{font-size:13px; line-height:1.6; color:var(--ink); margin:2px 0 4px}
+ .why.wsub{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:800; margin:11px 0 5px}
+ .why.look{display:grid; gap:5px}
+ .why.look>div{display:grid; grid-template-columns:15px 1fr; gap:8px; font-size:12.5px; color:var(--muted); line-height:1.45}
+ .why.look>div svg{width:13px; height:13px; color:var(--accent); margin-top:3px}
+ .why.bd{display:flex; justify-content:space-between; gap:10px; font-size:12.5px; padding:5px 0; border-top:1px dashed var(--line2)}
+ .why.bd:first-of-type{border-top:0}
+ .why.bd.bt{color:var(--ink)}
+ .why.bd.bv{font-family:var(--mono); color:var(--accent); font-weight:600; white-space:nowrap}
+ .why.take{margin-top:10px; font-size:12.5px; line-height:1.55; background:var(--accent-soft); color:#7a3a1f; border-radius:9px; padding:8px 10px}
+
+  /* your-plan vs my-picks key */
+ .keylegend{background:var(--paper); border:1px solid var(--line); border-radius:12px; padding:11px 12px; margin-bottom:10px; display:grid; gap:9px}
+ .kl-row{display:grid; grid-template-columns:auto 1fr; gap:9px; align-items:start; font-size:12.5px; color:var(--muted); line-height:1.45}
+ .kl-tag{font-size:11px; font-weight:800; padding:3px 8px; border-radius:999px; white-space:nowrap}
+ .kl-tag.your{background:#eceae6; color:#5b5347}
+ .kl-tag.rec{background:var(--accent-soft); color:var(--accent)}
+
+  /* food prices (Budget tab) */
+ .fpcard{background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:4px 14px}
+ .fpd{display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; padding:9px 0; border-top:1px solid var(--line2)}
+ .fpd:first-of-type{border-top:0}
+ .fpd-main{min-width:0}
+ .fpd-place{display:flex; align-items:center; gap:7px; font-weight:650; font-size:14px}
+ .fpd-place.flag{width:18px; height:13px}
+ .fpd-date{font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:2px}
+ .fpd-cost{text-align:right; font-family:var(--mono); font-size:13px; font-weight:700; color:var(--ink); white-space:nowrap}
+ .fpd-cost small{display:block; font-family:var(--sans); font-size:10px; font-weight:600; color:var(--muted); margin-top:1px}
+ .fpd-total{border-top:2px solid var(--line); margin-top:2px}
+ .fpd-total.fpd-place{color:var(--accent)}
+ .fp-avg{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:2px 0 10px}
+ .fp-avg.fp-k{display:block; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:700}
+ .fp-avg.fp-v{font-size:13px; font-weight:650; color:var(--ink)}
+ .fp-row{display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-top:1px solid var(--line2); font-size:12.5px}
+ .fp-row:first-of-type{border-top:0}
+ .fp-row.fp-p{font-family:var(--mono); font-size:12px; color:var(--muted); white-space:nowrap; text-align:right}
+
+  /* legend / footer */
+ .legend{display:flex; gap:8px; flex-wrap:wrap; margin:2px 0 18px; font-size:11px; color:var(--muted)}
+ .legend.status{cursor:default}
+  footer{color:var(--faint); font-size:11.5px; text-align:center; padding:24px 16px 40px; line-height:1.6}
+ .note-banner{background:var(--alert-soft); border:1px solid #eccabf; color:#7c2d1c; border-radius:12px;
+    padding:10px 12px; font-size:12.5px; margin-bottom:14px}
+ .hint{font-size:11.5px; color:var(--faint); text-align:center; margin:-4px 0 14px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1>Europe 2026</h1>
+      <span class="sub">12–24 Jun · 2 pax · KL → Milan → Dolomites → Venice → Zermatt → Paris</span>
+    </div>
+    <div class="switch" role="tablist">
+      <button id="tab-itin" role="tab" aria-selected="true" onclick="showView('itin')">Itinerary</button>
+      <button id="tab-budget" role="tab" aria-selected="false" onclick="showView('budget')">Budget</button>
+      <button id="tab-pack" role="tab" aria-selected="false" onclick="showView('pack')">Packing</button>
+      <button id="tab-weather" role="tab" aria-selected="false" onclick="showView('weather')">Weather</button>
+      <button id="tab-guide" role="tab" aria-selected="false" onclick="showView('guide')">Guide</button>
+    </div>
+  </div>
+</header>
+
+<div class="daystrip" id="daystrip"><div class="scroll" id="daystripScroll"></div></div>
+
+<main class="wrap pad">
+
+  <!-- ITINERARY -->
+  <section class="view on" id="view-itin">
+    <div class="overview" id="overview"></div>
+    <div class="keylegend">
+      <div class="kl-row"><span class="kl-tag your">Your plan</span><span>Times, the day flow &amp; booked tickets — straight from your sheet.</span></div>
+      <div class="kl-row"><span class="kl-tag rec">My picks</span><span>The <b>⏱ time-to-spend</b> chips and the expandable <b>“Why go &amp; timing”</b> notes are my recommendations.</span></div>
+    </div>
+    <div class="hint">Edit a <b>time</b> or pick a <b>duration</b> — later stops shift automatically. Tap a status pill to cycle Booked → To book · edit a <b>Spend</b> amount (synced with Budget). Saved on this device.</div>
+    <div class="legend">
+      <span class="status booked">Booked / paid</span>
+      <span class="status deciding">Deciding</span>
+      <span class="status tobook">To book</span>
+    </div>
+    <div class="legend" style="margin-top:-6px">
+      <span style="color:var(--ok);font-weight:700">Paid</span>
+      <span style="color:var(--warn);font-weight:700">To book</span>
+      <span style="color:#9a9082;font-weight:700">Estimate</span>
+      <span style="color:var(--faint)">— Spend is in local currency (€/CHF/RM); day totals convert to RM</span>
+    </div>
+    <div style="text-align:center;margin:-2px 0 14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button id="resetTimes" class="resetbtn">↺ Reset times &amp; durations</button>
+      <button id="backupBtn" class="resetbtn">⬇ Back up my edits</button>
+      <button id="restoreBtn" class="resetbtn">⬆ Restore</button>
+      <input type="file" id="restoreFile" accept="application/json,.json" style="display:none">
+    </div>
+    <div id="days"></div>
+  </section>
+
+  <!-- BUDGET -->
+  <section class="view" id="view-budget">
+    <div class="note-banner">All figures from your budget sheet (RM). “Per pax” = ÷2. Fuel & tolls are estimates. Tap a row’s pill to mark paid / to pay.</div>
+    <div class="btotals" id="btotals"></div>
+    <div id="budgetList"></div>
+    <details class="alt" style="margin:18px 0 0" id="altWrap"></details>
+    <div id="foodPrices"></div>
+  </section>
+
+  <!-- GUIDE -->
+  <section class="view" id="view-guide">
+    <div class="note-banner" style="background:var(--ok-soft);border-color:#cbe2d1;color:#2c4a37">
+      Good news: your Malaysian passport is <b>visa-free</b> for this trip and <b>ETIAS is not required yet</b> (it starts ~Q4 2026).
+    </div>
+    <div id="guide"></div>
+  </section>
+
+  <!-- PACKING -->
+  <section class="view" id="view-pack">
+    <div class="hint">Ticks saved on this device. Add your own items per section. The clothing list follows the forecast — see the <b>Weather</b> tab for the day-by-day reasoning.</div>
+    <div id="packList"></div>
+  </section>
+
+  <!-- WEATHER -->
+  <section class="view" id="view-weather">
+    <div id="weather"></div>
+  </section>
+
+</main>
+
+<footer>
+  Travel companion — not your source of truth. Always keep the original confirmation emails &amp; apps.<br>
+  Built 6 Jun 2026 · works fully offline · add to Home Screen for an app icon.
+</footer>
+
+<script>
+/* ============================= ICONS ============================= */
+const I = {
+  plane:'M2 16l20-6-7-1-4-7-1 5-6 2 3 2-1 4z',
+  train:'M5 17V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2zM5 11h14M8 22l-2-3m12 3l-2-3M9 7h6',
+  car:'M5 16l1.5-5A2 2 0 0 1 8.4 9.6h7.2a2 2 0 0 1 1.9 1.4L19 16M4 16h16v3H4zM7 19v2M17 19v2',
+  walk:'M13 4a1.5 1.5 0 1 0 0-.01M11 8l-2 5 2 1 1 6M11 8l3 2 3 1M9 13l-2 1-1 4',
+  bus:'M4 16V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10M4 16h16M4 16v3M20 16v3M4 11h16M8 19v2m8-2v2',
+  cablecar:'M3 5l18-2M12 4v4M5 9h14a1 1 0 0 1 1 1v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a1 1 0 0 1 1-1zM4 13h16',
+  boat:'M3 14l1.5 5h15L21 14M4 14l1-7h14l1 7M12 3v4M5 14h14',
+  bed:'M3 7v11M3 12h18a0 0 0 0 1 0 0v6M21 18v-4a3 3 0 0 0-3-3h-7v4M3 14h6',
+  food:'M5 3v7a2 2 0 0 0 4 0V3M7 3v18M16 3c-1.5 0-3 1.5-3 4s1.5 4 3 4v8',
+  ticket:'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4 2 2 0 0 1 0-4zM14 5v14',
+  pin:'M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11zM12 10a2 2 0 1 0 0-.01',
+  clock:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  note:'M5 4h11l3 3v13a0 0 0 0 1 0 0H5a0 0 0 0 1 0 0zM15 4v4h4M8 13h8M8 17h6',
+  warn:'M12 3l9 16H3zM12 10v4M12 17v.01',
+  check:'M5 12l4 4L19 7',
+  flag:'M5 21V4M5 4c3-2 7 2 11 0v9c-4 2-8-2-11 0',
+  sun:'M12 4V2m0 20v-2m8-8h2M2 12h2m13.5-5.5l1.5-1.5M4.5 19.5l1.5-1.5m11 0l1.5 1.5M4.5 4.5l1.5 1.5M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+  cross:'M6 6l12 12M18 6L6 18',
+  bulb:'M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10c.7.7 1 1.6 1 2.5h6c0-.9.3-1.8 1-2.5a6 6 0 0 0-4-10z',
+  info:'M12 16v-5M12 8h.01M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
+  shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  euro:'M16 8a5 5 0 1 0 0 8M5 10h7M5 14h6',
+  eye:'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  lock:'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v3'
+};
+function svg(name,cls){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"${cls?` class="${cls}"`:''}><path d="${I[name]||I.pin}"/></svg>`;}
+function modeIcon(m){return {plane:'plane',train:'train',car:'car',walk:'walk',bus:'bus',cablecar:'cablecar',boat:'boat',metro:'train',tram:'train'}[m]||'pin';}
+function kindIcon(k,it){
+  if(it.mode) return modeIcon(it.mode);
+  return {activity:'pin',meal:'food',logistics:'note',warn:'warn',buffer:'clock',note:'note'}[k]||'pin';
+}
+function mapUrl(q){return 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q);}
+/* convert any 24h clock time (HH:MM) inside a string to 12h am/pm; leaves durations/dates untouched */
+function to12h(s){
+  if(s==null) return s;
+  return String(s).replace(/(\d{1,2}):(\d{2})(?!\s?[ap]m)/gi,(m,h,mm)=>{
+    h=+h; if(h>23||+mm>59) return m;
+    const ap=h<12?'am':'pm'; let hh=h%12; if(hh===0) hh=12;
+    return hh+':'+mm+' '+ap;
+  });
+}
+
+/* ============================= DATA ============================= */
+const DAYS = [
+ {date:'12 Jun',dow:'Fri',title:'KL → Milan',cc:['my','ae','it'],sub:'Fly out · evening in Milan',
+  items:[
+    {k:'transit',t:'02:15',title:'KLIA → Dubai (DXB)',mode:'plane',travel:'~7h 50m',detail:'Reach KLIA by 23:00 (11 Jun). Arrive DXB Terminal 3 ~05:05.',book:{id:'fl-out',s:true,L:'Emirates'},place:'Kuala Lumpur International Airport'},
+    {k:'buffer',t:'05:05',title:'Layover in Dubai',dur:'~4h',detail:'Arrive DXB ~05:05 · next flight departs 09:10.'},
+    {k:'transit',t:'09:10',title:'Dubai → Milan Malpensa',mode:'plane',travel:'~6h 25m',detail:'Arrive 14:10, Terminal 1.',book:{id:'fl-out',s:true,L:'Emirates'},place:'Milan Malpensa Airport'},
+    {k:'logistics',t:'14:10',title:'Arrive Milan · luggage & customs',dur:'~1h',detail:'Bags ~15:10, then clear customs.'},
+    {k:'transit',t:'15:41',title:'Malpensa Express → Milano Centrale',mode:'train',travel:'~51 min',detail:'€15/adult, every 30 min, buy at the machine. Trains 15:11 or 15:41 (direct, 56 min).',place:'Malpensa Airport railway station T1'},
+    {k:'transit',t:'16:35',title:'Milano Centrale → hotel',mode:'train',travel:'~15 min',fare:'~€2.20pp',detail:'One more short train to the hotel area (ATM ticket).'},
+    {k:'activity',t:'16:50',title:'Reach hotel · rest',dur:'~1h',place:'Palazzo Loreto Hotel Milano'},
+    {k:'activity',t:'18:00',title:'Starbucks Reserve Roastery',dur:'30 min',hop:{mode:'metro',t:'~15 min',d:'M1 from hotel',fare:'~€2.20pp'},place:'Starbucks Reserve Roastery Milano'},
+    {k:'meal',t:'18:30',title:'Gelato at Ciacco',dur:'~30 min',detail:'Artisan gelato — a dessert stop, not dinner.',hop:{mode:'walk',t:'4 min',d:'300 m'},place:'Ciacco Gelato Milano'},
+    {k:'activity',t:'19:30',title:'Galleria Vittorio Emanuele II',dur:'~30 min',hop:{mode:'walk',t:'5 min',d:'400 m'},detail:'View the building + a historic café/tea. No shopping.',place:'Galleria Vittorio Emanuele II Milano'},
+    {k:'meal',t:'19:45',title:'Dinner',dur:'~1h 30m',hop:{mode:'walk',t:'2 min',d:'150 m'},detail:'Pick a spot near the centre or in Navigli — the aperitivo spread there can double as dinner. (Tap “Note” to pin the place.)',place:'Milano dinner'},
+    {k:'activity',t:'21:30',title:'Navigli canals',dur:'flexible',hop:{mode:'tram',t:'~15 min',d:'2.5 km · or 30 min walk',fare:'~€2.20pp'},detail:'Chill & people-watch.',place:'Navigli Milano'}
+  ],
+  stay:{nm:'Palazzo Loreto Hotel',book:{id:'b-acc-mil',s:true},nt:'Milano Stazione Centrale · 3.2 km from Duomo · 1 night',rm:665,night:665,place:'Palazzo Loreto Hotel Milano'}},
+
+ {date:'13 Jun',dow:'Sat',title:'Milan → Dolomites',cc:['it'],sub:'Brera morning, Duomo, then drive to Ortisei',
+  items:[
+    {k:'meal',t:'09:00',title:'Brunch in Brera',dur:'~1.25h',detail:'Sit, eat & people-watch. Try Bar Brera (Via Brera) or Fioraio Bianchi Caffè (Via Montebello).',place:'Bar Brera Milano'},
+    {k:'activity',t:'10:15',title:'Stroll Brera’s lanes',dur:'~1h',hop:{mode:'walk',t:'2 min'},detail:'Via Fiori Chiari → Via Madonnina → Via Brera: cobbles, boutiques, artists & the Academy courtyard (Napoleon statue). Prime people-watching & photos.',place:'Via Fiori Chiari Milano'},
+    {k:'activity',t:'11:15',title:'Orto Botanico di Brera',dur:'~30 min',hop:{mode:'walk',t:'2 min',d:'behind Palazzo Brera'},detail:'Hidden garden behind the palazzo — two ancient ginkgos, quiet, lovely for photos. Free.',place:'Orto Botanico di Brera Milano'},
+    {k:'meal',t:'11:45',title:'Coffee or spritz · Piazza del Carmine',dur:'~30 min',hop:{mode:'walk',t:'3 min'},detail:'Brera’s social square — grab an outdoor table to chill before the Duomo.',place:'Piazza del Carmine Milano'},
+    {k:'transit',t:'12:25',title:'Walk Brera → La Scala',mode:'walk',travel:'~15 min',dist:'~1.1 km',place:'Teatro alla Scala Milano'},
+    {k:'activity',t:'12:40',title:'La Scala (from outside)',dur:'~15 min',detail:'Quick exterior look on the way to the Duomo (the facade is famously plain). 2–3 min through the Galleria to the Duomo.',place:'Teatro alla Scala Milano'},
+    {k:'activity',t:'13:00',title:'Duomo + rooftop terraces',dur:'~2h',hop:{mode:'walk',t:'3 min',d:'250 m · via the Galleria'},detail:'Cover shoulders & knees. Opens 9am. Done ~3pm.',book:{id:'tk-duomo',s:true,L:'Stairs + Pinacoteca combo'},place:'Duomo di Milano'},
+    {k:'note',title:'Car pickup 15:30 — amend the booking',detail:'Duomo (booked 1pm) is done ~3pm, so collect the car at 3:30pm. Change the Enterprise pickup from 14:00 → 15:30.'},
+    {k:'transit',t:'15:30',title:'Collect rental car · Milano Centrale',mode:'car',detail:'Enterprise — Piazza Duca d’Aosta 1, Galleria delle Carrozze.',book:{id:'car',s:true,L:'Enterprise'},place:'Enterprise Milano Centrale Galleria delle Carrozze'},
+    {k:'transit',t:'15:45',title:'Drive Milan → Ortisei (via Brixen)',mode:'car',travel:'~4h',dist:'~290 km',detail:'Tea-time stop in Brixen on the way.',place:'Ortisei'},
+    {k:'activity',t:'19:30',title:'Reach Ortisei · check in',detail:'Check in (Gasthof Lamm, Barbiano), then head out to Brixen or Ortisei town.'},
+    {k:'meal',t:'20:00',title:'Dinner',dur:'~1.5h',detail:'In Ortisei town or Brixen (near the Barbiano airbnb).'}
+  ],
+  stay:{nm:'Gasthof Lamm · Barbiano',book:{id:'b-acc-ort',s:true},nt:'In Barbiano, ~35–40 min from Ortisei/Val Gardena · 3 nights (13–15 Jun) · cancel by 8 Jun',rm:2373,night:791,place:'Gasthof Lamm, Dorf 8, 39040 Barbiano BZ, Italy',
+        alts:[
+          {n:'Barbian (booked)',p:'RM 2,373 · 791/nt',booked:true},
+          {n:'Ativa Suites',p:'RM 2,361 · 787/nt'},
+          {n:'Pension Belaval (B&B)',p:'RM 710 · 237/nt'},
+          {n:'Apartment Auta (Airbnb)',p:'RM 3,224 · 1,075/nt'},
+          {n:'Rooftop Apt Margherita (Airbnb)',p:'RM 3,612 · 1,204/nt'},
+          {n:'Chalet Albric',p:'RM 2,638 · 879/nt'},
+          {n:'Bonichhof',p:'RM 2,103 · 701/nt'},
+          {n:'Brixen',p:'RM 2,365 · 788/nt'},
+          {n:'Garni Hotel Belalp',p:'RM 2,606 · 869/nt'}
+        ]}},
+
+ {date:'14 Jun',dow:'Sun',title:'Dolomites · Alpe di Siusi',cc:['it'],sub:'E-bike on Alpe di Siusi',
+  items:[
+    {k:'meal',t:'07:00',title:'Breakfast',dur:'~25 min',detail:'Quick at the airbnb before departing.'},
+    {k:'transit',t:'07:30',title:'Drive Barbiano → Compatsch parking',mode:'car',travel:'~35 min',dist:'~25 km',detail:'Depart airbnb 07:30 · arrive Compatsch ~08:05 (before the 09:00–17:00 road restriction).',place:'Compatsch Alpe di Siusi'},
+    {k:'activity',t:'08:15',title:'E-bike Alpe di Siusi',dur:'4–5h',detail:'Pick up at Compatsch (~08:05). Half-day rental = 4–5h of cycling. RETURN BIKE BY 5PM (shop closes); LAST LIFT DOWN 6PM.',book:{id:'tk-ebike',s:false,L:'Alpe di Siusi e-bike (half day)'},place:'Alpe di Siusi'},
+    {k:'meal',t:'13:00',title:'Lunch',dur:'~1h',detail:'Rifugio on Alpe di Siusi — strudel & a hot dish.'},
+    {k:'note',title:'Alpe di Siusi cable car (alt to driving)',detail:'~€60 / 2 pax if you take the cable car up instead of driving.',book:{id:'tk-adscar',s:false,L:'Alpe di Siusi cable car'}},
+    {k:'meal',t:'19:00',title:'Dinner',dur:'~1.5h',detail:'In Ortisei or near Barbiano (Brixen / Klausen).'}
+  ],
+  stay:{nm:'Gasthof Lamm · Barbiano',book:{id:'b-acc-ort',s:true},nt:'Night 2 of 3',rm:null,place:'Gasthof Lamm, Dorf 8, 39040 Barbiano BZ, Italy'}},
+
+ {date:'15 Jun',dow:'Mon',title:'Dolomites · Tre Cime',cc:['it'],sub:'Tre Cime classic loop · back by 3:30pm',
+  items:[
+    {k:'meal',t:'05:30',title:'Breakfast',dur:'~20 min',detail:'Early / packed — before the 6am drive.'},
+    {k:'transit',t:'06:00',title:'Drive Ortisei → Tre Cime',mode:'car',travel:'~2h',dist:'~75 km mountain road',place:'Rifugio Auronzo Tre Cime'},
+    {k:'logistics',t:'07:55',title:'Tre Cime parking',detail:'€40 — pay on arrival at Rifugio Auronzo.',book:{id:'tk-trecime',s:true,L:'Parking · CIMB'}},
+    {k:'activity',t:'08:00',title:'Tre Cime classic loop hike',dur:'3–4h',place:'Tre Cime di Lavaredo'},
+    {k:'meal',t:'12:00',title:'Lunch',dur:'~1h',detail:'Rifugio Auronzo or Lavaredo on the loop.'},
+    {k:'transit',t:'13:30',title:'Drive back to Ortisei',mode:'car',travel:'~2h',detail:'Depart ~13:30 → back in Ortisei by ~3:30pm.'},
+    {k:'buffer',title:'Evening free in Ortisei',dur:'evening',detail:'Rest before dinner.'},
+    {k:'meal',t:'19:00',title:'Dinner',dur:'~1.5h',detail:'Dinner in town (Ortisei / Brixen / Klausen).'}
+  ],
+  stay:{nm:'Gasthof Lamm · Barbiano',book:{id:'b-acc-ort',s:true},nt:'Night 3 of 3 · check out tomorrow',rm:null,place:'Gasthof Lamm, Dorf 8, 39040 Barbiano BZ, Italy'}},
+
+ {date:'16 Jun',dow:'Tue',title:'Dolomites → Venice · Seceda',cc:['it'],sub:'Seceda morning, drive to Venice, sunset at San Marco',
+  items:[
+    {k:'meal',t:'06:45',title:'Breakfast',dur:'~30 min',detail:'Early & packed before checkout.'},
+    {k:'logistics',t:'07:20',title:'Check out · depart Barbiano',detail:'Luggage in the car — drive to the Seceda lift at Ortisei.'},
+    {k:'transit',t:'07:30',title:'Drive Barbiano → Seceda (Ortisei)',mode:'car',travel:'~50 min',detail:'Arrive the Seceda lift ~08:20.',place:'Seceda cable car Ortisei'},
+    {k:'activity',t:'08:30',title:'Seceda summit',dur:'~2.5h',detail:'Cable car up from Ortisei — the big ridge view & a short walk. Leave by 11:00. Ticket: Seceda A/R web 8:30am, €70.50pp (2 pax), serials 145457/145458.',book:{id:'tk-seceda',s:true,lock:true,L:'Seceda A/R · 8:30am'},place:'Seceda cable car Ortisei'},
+    {k:'transit',t:'11:00',title:'Drive Ortisei → Venice Mestre',mode:'car',travel:'~3h',dist:'~210 km',detail:'Out of the Dolomites ~11:30 · arrive Mestre ~15:00.',place:'Venezia Mestre railway station'},
+    {k:'meal',t:'13:00',title:'Lunch',dur:'~45 min',detail:'Autogrill stop on the drive.'},
+    {k:'note',title:'Amend the car return to 15:30',detail:'Rental period is 13 Jun 15:30 → 16 Jun 15:30. Change the Enterprise return from 14:00 to 15:30 (16 Jun).'},
+    {k:'transit',t:'15:15',title:'Return rental car · Venice Mestre',mode:'car',detail:'Stazione Mestre, Piazzale Favretti, Platform 1. Booked return 15:30 (latest).',book:{id:'car',s:true,L:'Enterprise return · 16 Jun 15:30'},place:'Venezia Mestre railway station'},
+    {k:'transit',t:'15:35',title:'Mestre → Venezia Santa Lucia',mode:'train',travel:'~10–15 min',fare:'~€1.45pp',place:'Venezia Santa Lucia'},
+    {k:'activity',t:'16:15',title:'Check in · San Croce',dur:'~45 min',detail:'Hotel check-in ~4–5pm.',place:'Fondamenta Rizzi Venezia'},
+    {k:'activity',t:'17:00',title:'Piazza San Marco + sunset',dur:'~2h',hop:{mode:'walk',t:'~20 min',d:'or vaporetto'},detail:'5–7pm at San Marco for the Venice sunset.',place:'Piazza San Marco Venezia'},
+    {k:'meal',t:'19:30',title:'Dinner',dur:'~1.5h',detail:'Cicchetti crawl or a San Polo trattoria.'}
+  ],
+  stay:{nm:'Fondamenta Rizzi',book:{id:'b-acc-ven',s:true},nt:'San Croce · 2 nights (16–17 Jun)',rm:1503,night:751.5,place:'Fondamenta Rizzi Venezia'}},
+
+ {date:'17 Jun',dow:'Wed',title:'Venice',cc:['it'],sub:'Doge’s Palace, St Mark’s, Dorsoduro',
+  items:[
+    {k:'meal',t:'07:00',title:'Breakfast',dur:'~30 min',detail:'Coffee & pastry near the apartment (San Croce).'},
+    {k:'activity',t:'07:30',title:'Rialto Bridge + morning market',dur:'~1h',detail:'Quietest early.',place:'Rialto Bridge Venice'},
+    {k:'transit',t:'09:00',title:'Walk to Doge’s Palace',mode:'walk',travel:'~10 min',place:'Doge’s Palace Venice'},
+    {k:'activity',t:'09:15',title:'Doge’s Palace (incl. Bridge of Sighs)',dur:'~1.5–2h',detail:'Ticket: Musei P. San Marco – Ducale, 09:15 timed entry, €35pp (2 pax).',book:{id:'tk-doge',s:true,lock:true,L:'Ducale · 9:15 entry'},place:'Doge’s Palace Venice'},
+    {k:'activity',t:'11:15',title:'St Mark’s Campanile (views)',dur:'~40 min',hop:{mode:'walk',t:'2 min'},detail:'Lift up the bell tower for the best view over the piazza, domes & lagoon — fills the gap before your timed Basilica slot. Can have a queue.',book:{id:'tk-campanile',s:false,L:'Campanile (€10pp)'},place:'St Mark’s Campanile Venice'},
+    {k:'activity',t:'12:00',title:'St Mark’s Basilica (timed entry)',dur:'~45 min',hop:{mode:'walk',t:'2 min',d:'120 m'},detail:'Ticket: Basilica S.Marco + Museum, valid 12:00–12:30 (5-min leeway), €20pp. Pala d’Oro NOT included. Bags over 40×30×20 cm refused.',book:{id:'tk-marks',s:true,lock:true,L:'Basilica · 12:00–12:30'},place:'St Mark’s Basilica Venice'},
+    {k:'meal',t:'13:00',title:'Lunch · cicchetti',dur:'~1h',detail:'Cicchetti at Osteria al Squero — canal-side in Dorsoduro, standing & very local.',hop:{mode:'walk',t:'~15 min',d:'to Dorsoduro · via Accademia'},place:'Osteria al Squero Venezia'},
+    {k:'activity',t:'14:00',title:'Dorsoduro + Accademia Bridge',dur:'~2.5h',detail:'Relaxed wander — Accademia, Campo Santa Margherita, Squero di San Trovaso.',hop:{mode:'walk',t:'5 min',d:'350 m'},place:'Accademia Bridge Venice'},
+    {k:'meal',t:'16:30',title:'Gelato or spritz · Zattere',dur:'~1h',detail:'Stroll the sunny Zattere waterfront — gelato at Gelateria Nico or a canal-side spritz before the boat.',hop:{mode:'walk',t:'5 min'},place:'Fondamenta Zattere Venezia'},
+    {k:'transit',t:'18:00',title:'Grand Canal vaporetto',mode:'boat',travel:'~40 min',fare:'€9.50pp',detail:'Back toward San Marco.',place:'Vaporetto Grand Canal Venice'},
+    {k:'meal',t:'19:30',title:'Dinner',dur:'~1.5h',detail:'Trattoria Al Gazzettino or Osteria alle Testiere.',place:'Trattoria Al Gazzettino Venezia'}
+  ],
+  stay:{nm:'Fondamenta Rizzi',book:{id:'b-acc-ven',s:true},nt:'Night 2 of 2',rm:null,place:'Fondamenta Rizzi Venezia'}},
+
+ {date:'18 Jun',dow:'Thu',title:'Venice → Zermatt',cc:['it','ch'],sub:'4-change rail day to the Matterhorn',
+  items:[
+    {k:'meal',t:'08:00',title:'Breakfast',dur:'~30 min',detail:'In Venice before the train (or grab for the journey).'},
+    {k:'warn',title:'Consider the ~10:00 train instead of 11:48',detail:'Andrew’s tip: an earlier departure gives a ~2h buffer at Milano Centrale — this is a 4-transfer day with luggage. Verify every Swiss leg on SBB.ch.'},
+    {k:'activity',t:'09:00',title:'Castello district (only if not on early train)',dur:'~1h',place:'Castello Venice'},
+    {k:'transit',t:'11:48',title:'Venezia S. Lucia → Milano Centrale',mode:'train',travel:'2h 27m',detail:'Frecciarossa 9728 · Coach 6, seats 14C/14D · arrive 14:15.',book:{id:'tr-vz',s:true,lock:true,L:'Frecciarossa 9728 · 11:48'},place:'Venezia Santa Lucia'},
+    {k:'meal',t:'14:15',title:'Lunch (on the move)',dur:'~30 min',detail:'Grab at Milano Centrale during the change.'},
+    {k:'transit',t:'14:25',title:'Milano Centrale → Domodossola',mode:'train',travel:'1h 39m',detail:'Regionale Trenord 2428 · 2nd class, any seat · arrive 16:04.',book:{id:'tr-vz',s:true,lock:true,L:'Regionale 2428 · 14:25'}},
+    {k:'transit',t:'16:48',title:'Domodossola → Visp',mode:'train',travel:'37 min',detail:'SBB 64 · arrive 17:25 · 12 min change. On the SBB Saver Day Pass (CHF 52, valid 18 Jun — any GA-area train, so this time is flexible).',book:{id:'tr-vz',s:true,L:'SBB Day Pass'}},
+    {k:'transit',t:'17:37',title:'Visp → Zermatt',mode:'train',travel:'1h 13m',detail:'SBB 355 · arrive 18:50. Same SBB Saver Day Pass — flexible.',book:{id:'tr-vz',s:true,L:'SBB Day Pass'}},
+    {k:'activity',t:'18:50',title:'Arrive Zermatt · check in',detail:'5 min walk to Arca Aparthotel.',place:'Arca Aparthotel Spa Zermatt'},
+    {k:'meal',t:'19:30',title:'Groceries + cook at apartment'}
+  ],
+  stay:{nm:'Arca Aparthotel & Spa',book:{id:'b-acc-zer',s:true},nt:'2 nights (18–19 Jun) · has a spa, bring swimwear',rm:1912.75,night:956.375,place:'Arca Aparthotel Spa Zermatt'}},
+
+ {date:'19 Jun',dow:'Fri',title:'Zermatt',cc:['ch'],sub:'Gornergrat AM · Riffelsee · 5-Seenweg + mountain cart',
+  items:[
+    {k:'meal',t:'06:15',title:'Breakfast',dur:'~25 min',detail:'Early at the apartment — out the door for the 07:00 first cogwheel.'},
+    {k:'transit',t:'07:00',title:'Zermatt → Gornergrat (cogwheel)',mode:'train',travel:'33 min',detail:'⭐ First train — sit on the RIGHT for the Matterhorn. Arrive Gornergrat 07:33.',place:'Gornergrat Bahn Zermatt'},
+    {k:'activity',t:'07:33',title:'Gornergrat summit (3,089m)',dur:'~1h 30m',detail:'Viewing platform · 360° loop walk · ZOOOM the Matterhorn exhibition · coffee. Dress for winter up top (−2 to +5°C, windy).',place:'Gornergrat'},
+    {k:'transit',t:'09:00',title:'Gornergrat → Rotenboden',mode:'train',travel:'~6 min',detail:'One stop down.',place:'Rotenboden'},
+    {k:'activity',t:'09:10',title:'Riffelsee (Matterhorn reflections)',dur:'~50 min',detail:'10-min walk from Rotenboden (2,815m) — the classic Matterhorn mirror; marmots about. Sheep: the flock is usually only up late June–Sept, so likely NOT present on the 19th — check the gornergrat.ch GPS tracker that morning.',place:'Riffelsee Zermatt'},
+    {k:'transit',t:'10:00',title:'Walk Rotenboden → Riffelberg',mode:'walk',travel:'~45 min',dist:'easy downhill',place:'Riffelberg Zermatt'},
+    {k:'meal',t:'10:50',title:'Lunch — Riffelhaus 1853',dur:'~55 min',detail:'At Riffelberg. Not in the lift budget — ~CHF 30–50pp + snacks.',place:'Riffelhaus 1853 Zermatt'},
+    {k:'transit',t:'11:50',title:'Riffelberg → Zermatt',mode:'train',travel:'~25 min',detail:'Descend to the village — arrive ~12:15.',place:'Zermatt Bahnhof'},
+    {k:'transit',t:'12:15',title:'Walk to Sunnegga valley station',mode:'walk',travel:'~15 min',detail:'Across the village to the Sunnegga Express base (Vispastrasse, near the river).',place:'Sunnegga Express Zermatt'},
+    {k:'logistics',t:'12:30',title:'Buy cart + extra-gondola tickets',dur:'~15 min',detail:'At the Sunnegga office tell them the plan: “2 of us, hiking the 5-Seenweg + mountain cart, going up to Blauherd twice.” Smartest set → (1) the 5-Lakes / 5-Seenweg combo (Blauherd up + Sunnegga down, ~CHF 47pp — cheaper than the CHF 59pp Blauherd return); (2) one extra Sunnegga→Blauherd gondola single (~CHF 18–22pp, the cheap gondola-only hop) for the cart’s 2nd ascent; then buy the cart (~CHF 15pp) at the Blauherd kiosk up top. Confirm prices at the counter (estimates).'},
+    {k:'transit',t:'12:45',title:'Zermatt → Sunnegga (funicular)',mode:'train',travel:'4 min',detail:'Underground funicular.',place:'Sunnegga Zermatt'},
+    {k:'transit',t:'12:55',title:'Sunnegga → Blauherd (gondola)',mode:'cablecar',travel:'~8 min',detail:'Arrive Blauherd ~13:05.',place:'Blauherd Zermatt'},
+    {k:'activity',t:'13:10',title:'Mountain cart: Blauherd → Sunnegga',dur:'~35 min',detail:'~300m gravel descent on a mountain cart — fun & fast.',place:'Sunnegga Zermatt'},
+    {k:'transit',t:'13:50',title:'Sunnegga → Blauherd (extra single)',mode:'cablecar',travel:'~8 min',detail:'Gondola back up (the extra single ticket) — arrive ~14:00.',place:'Blauherd Zermatt'},
+    {k:'activity',t:'14:00',title:'5-Seenweg (Five Lakes Walk)',dur:'~2h 15m',detail:'Blauherd → Stellisee → Grindjisee → (skip Grünsee) → Moosjisee → Leisee → Sunnegga. Stellisee is the big Matterhorn-reflection lake.',place:'Stellisee Zermatt'},
+    {k:'transit',t:'16:20',title:'Sunnegga → Zermatt (funicular)',mode:'train',travel:'~10 min',detail:'Arrive village ~16:30. This down-leg can be bought as a single on its own if you skip the 5-Lakes combo / a return.',place:'Zermatt Bahnhof'},
+    {k:'meal',t:'19:00',title:'Dinner',dur:'~1.5h',detail:'Rest, then dinner — early night before the 12:06 Paris train tomorrow.'}
+  ],
+  stay:{nm:'Arca Aparthotel & Spa',book:{id:'b-acc-zer',s:true},nt:'Night 2 of 2',rm:null,place:'Arca Aparthotel Spa Zermatt'}},
+
+ {date:'20 Jun',dow:'Sat',title:'Zermatt → Paris',cc:['ch','fr'],sub:'Scenic rail to Gare de Lyon',
+  items:[
+    {k:'meal',t:'09:30',title:'Breakfast',dur:'~45 min',detail:'Relaxed at the apartment / a Zermatt café before the noon train.'},
+    {k:'transit',t:'12:06',title:'Zermatt → Visp',mode:'train',travel:'1h 13m',detail:'SBB Supersaver R340 · arrive Visp 13:19 · 17-min change. Ticket only valid on R340 + IR1822, CHF 45.20pp.',book:{id:'tr-zp',s:true,lock:true,L:'SBB R340 · 12:06'},place:'Zermatt Bahnhof'},
+    {k:'transit',t:'13:36',title:'Visp → Lausanne',mode:'train',travel:'1h 35m',detail:'SBB IR 1822 · arrive Lausanne 15:11 · 1h 08 change (same Supersaver ticket).',book:{id:'tr-zp',s:true,lock:true,L:'SBB IR1822 · 13:36'}},
+    {k:'meal',t:'15:20',title:'Lunch (on the move)',dur:'~45 min',detail:'Grab during the Lausanne change, or dine on the TGV to Paris.'},
+    {k:'transit',t:'16:19',title:'Lausanne → Paris Gare de Lyon',mode:'train',travel:'3h 45m',detail:'TGV Lyria 9270 · Voiture 17, seats 774 & 775 (côte-à-côte) · arrive 20:04. Non-flex.',book:{id:'tr-zp',s:true,lock:true,L:'TGV Lyria 9270 · 16:19'},place:'Paris Gare de Lyon'},
+    {k:'transit',t:'20:04',title:'Relatives drive us home',mode:'car',detail:'Staying with relatives in Paris.'},
+    {k:'meal',t:'21:00',title:'Dinner',dur:'~1.5h',detail:'Late dinner with relatives in Paris.'}
+  ],
+  stay:{free:'Relative’s house · 20–23 Jun · no cost'}},
+
+ {date:'21 Jun',dow:'Sun',title:'Paris',cc:['fr'],sub:'Louvre + Sainte-Chapelle, then Eiffel or outlet',
+  items:[
+    {k:'meal',t:'07:30',title:'Breakfast',dur:'~30 min',detail:'Café & croissant before the Louvre opens.'},
+    {k:'activity',t:'09:30',title:'The Louvre (focused highlights)',dur:'~2–2.5h',detail:'Ticket: 09:30 timed entry, €32pp (2 pax). Enter via Carrousel or Porte des Lions (open till 17:15) to skip the pyramid queue. Pre-pick 5–6 works + a route.',book:{id:'tk-louvre',s:true,lock:true,L:'Louvre · 9:30 entry'},place:'Louvre Museum Paris'},
+    {k:'transit',t:'12:00',title:'Walk Louvre → Sainte-Chapelle',mode:'walk',travel:'~10 min',dist:'~850 m',place:'Sainte-Chapelle Paris'},
+    {k:'activity',t:'12:15',title:'Sainte-Chapelle',dur:'~1h',detail:'Straight after the Louvre (~12:15) — midday sun lights the glass. Not yet booked: reserve a slot to lock it in (10 min from the Louvre).',book:{id:'tk-saintechap',s:false,L:'Sainte-Chapelle'},place:'Sainte-Chapelle Paris'},
+    {k:'meal',t:'13:30',title:'Lunch',dur:'~1h',detail:'Île de la Cité / Latin Quarter bistro.'},
+    {k:'activity',t:'15:30',title:'Eiffel Tower + Seine stroll',dur:'~3–4h',hop:{mode:'metro',t:'~20 min',d:'3.5 km',fare:'~€2.50pp'},detail:'Golden hour at Trocadéro, then walk the Seine as it lights up. (Outlet shopping is on Day 23.)',place:'Eiffel Tower Paris'},
+    {k:'meal',t:'19:30',title:'Dinner',dur:'~1.5h',detail:'Rue Cler near the Eiffel, or back with relatives.'}
+  ],
+  stay:{free:'Relative’s house'}},
+
+ {date:'22 Jun',dow:'Mon',title:'Paris → Mont Saint-Michel',cc:['fr'],sub:'Nomad rail day · back in Paris ~22:16',
+  items:[
+    {k:'meal',t:'06:15',title:'Breakfast',dur:'~20 min',detail:'Early / grab-and-go — be at Gare Montparnasse with a ~20-min buffer (platform presence 2 min before is obligatory). Buy the day’s sandwiches here too (Paul / boulangeries, ~€5–7 each) — there’s little to buy en route.'},
+    {k:'transit',t:'07:32',title:'Paris → Mont Saint-Michel',mode:'train',travel:'3h 51m',detail:'Train Nomad · Paris Montparnasse 1&2 → Pontorson · Voiture 13, seat 71 · arrive Pontorson 11:23.',book:{id:'tr-msm',s:true,lock:true,L:'Nomad · 07:32'},place:'Paris Montparnasse'},
+    {k:'transit',t:'11:40',title:'Pontorson → Le Mont St-Michel (coach)',mode:'bus',travel:'27 min',detail:'Car Nomad · connects from the train (one ticket; the coach waits) · arrive the Mont 12:07.',book:{id:'tr-msm',s:true,lock:true,L:'Coach · incl.'},place:'Mont Saint-Michel'},
+    {k:'meal',t:'12:30',title:'Lunch (packed)',dur:'~30 min',detail:'Quick bite on the ramparts — packed sandwiches (from Montparnasse) plus a bit of light food to share — as the tide rises toward its ~13:25 peak (coef 59) for the best bay views. On-island prices are steep (coffee ~€4, galette €8–15), so keep extras light: ~€25–35 for two all-in.'},
+    {k:'activity',t:'13:15',title:'Explore Mont Saint-Michel & Abbey',dur:'~3h 30m',detail:'Up the Grande Rue to the abbey — pre-book a timed entry ~13:30 to skip the queue (~1h15–1h30 inside; the West Terrace gives the high-tide bay panorama from above). Then the ramparts, cloister garden & viewpoints. Back at the shuttle stop by ~16:45 for the 17:25 coach.',place:'Mont Saint-Michel Abbey'},
+    {k:'transit',t:'17:25',title:'Le Mont St-Michel → Pontorson (coach)',mode:'bus',travel:'27 min',detail:'Car Nomad · arrive Pontorson 17:52. HARD deadline — be at the stop early; miss it and you miss the train home. Tip: grab light dinner for the train at Les Galeries du Mont-Saint-Michel (La Caserne, by the coach stop) before boarding — ~€12–20 for two.',book:{id:'tr-msm',s:true,lock:true,L:'Coach · incl.'},place:'Le Mont St-Michel shuttle stop'},
+    {k:'transit',t:'18:20',title:'Pontorson → Paris',mode:'train',travel:'3h 56m',detail:'Train Nomad · Voiture 13, seat 25 · arrive Paris Montparnasse 22:16. Likely no buffet — eat the dinner you packed. Back-up during the 28-min change: Boulangerie de la Gare, 100 m from Pontorson station (if still open). Late supper with relatives ~22:45.',book:{id:'tr-msm',s:true,lock:true,L:'Nomad · 18:20'},place:'Paris Montparnasse'},
+    {k:'meal',t:'22:45',title:'Late dinner in Paris',dur:'~1h',detail:'Back ~22:16 — a late supper with relatives, or eat on the train.'}
+  ],
+  stay:{free:'Relative’s house'}},
+
+ {date:'23 Jun',dow:'Tue',title:'Paris',cc:['fr'],sub:'Versailles + outlet',
+  items:[
+    {k:'meal',t:'08:00',title:'Breakfast',dur:'~30 min',detail:'Before heading to Versailles (RER C).'},
+    {k:'transit',t:'08:45',title:'Paris → Versailles',mode:'train',travel:'~45 min',dist:'RER C',fare:'~€2.50pp',place:'Palace of Versailles'},
+    {k:'activity',t:'09:45',title:'Palace of Versailles (half day)',dur:'half day',detail:'Booked. Bring the e-ticket; arrive near your timed slot.',book:{id:'tk-versailles',s:true,L:'entrance'},place:'Palace of Versailles'},
+    {k:'meal',t:'13:30',title:'Lunch',dur:'~1h',detail:'Versailles town (near the Notre-Dame market) or at the palace.'},
+    {k:'activity',t:'15:00',title:'Outlet shopping',dur:'half day',hop:{mode:'train',t:'~1h 30m',d:'from Versailles via Paris'},detail:'La Vallée Village (~40 min from Paris).',place:'La Vallée Village'},
+    {k:'meal',t:'20:00',title:'Dinner',dur:'~1.5h',detail:'Back in Paris — final dinner with relatives.'}
+  ],
+  stay:{free:'Relative’s house'}},
+
+ {date:'24 Jun',dow:'Wed',title:'Fly home',cc:['fr','ae','my'],sub:'Paris CDG → Dubai',
+  items:[
+    {k:'transit',t:'11:20',title:'Depart Paris CDG → Dubai',mode:'plane',travel:'arrive DXB 20:35',book:{id:'fl-ret',s:true,L:'Emirates'},place:'Paris Charles de Gaulle Airport'},
+    {k:'transit',t:'25 Jun 03:10',title:'Dubai → Kuala Lumpur',mode:'plane',detail:'Arrive KL 14:25 — HOME.',book:{id:'fl-ret',s:true,L:'Emirates'},place:'Kuala Lumpur International Airport'}
+  ],
+  stay:{free:'Overnight in transit'}}
+];
+
+const LEGS=[
+  {a:'KL',b:'Milan',mode:'plane',t:'~14h via DXB'},
+  {a:'Milan',b:'Dolomites',mode:'car',t:'~4h · 290 km'},
+  {a:'Ortisei',b:'Venice',mode:'car',t:'~3h · 210 km'},
+  {a:'Venice',b:'Zermatt',mode:'train',t:'7h 2m · 4 changes'},
+  {a:'Zermatt',b:'Paris',mode:'train',t:'7h 30m · 2 changes'},
+  {a:'Paris',b:'KL',mode:'plane',t:'~20h via DXB'}
+];
+
+/* Single source of truth for all costs. `itin` links a line to an itinerary item (shown in its Spend column).
+   paid:true = booked (locked on the itinerary, still editable in Budget). pax is derived as rm/2. */
+const BUDGET=[
+  {cat:'Flights',date:'12 Jun',n:'Emirates return (KL–Milan / Paris–KL)',rm:5586,id:'b-fl',paid:true,itin:'KLIA → Dubai (DXB)'},
+  {cat:'Stays',date:'12 Jun',n:'Milan · Palazzo Loreto (1 night)',rm:665,id:'b-acc-mil',paid:true},
+  {cat:'Stays',date:'13–15 Jun',n:'Ortisei · Barbiano (3 nights)',rm:2373,id:'b-acc-ort',paid:true},
+  {cat:'Stays',date:'16–17 Jun',n:'Venice · Fondamenta Rizzi (2 nights)',rm:1503,id:'b-acc-ven',paid:true},
+  {cat:'Stays',date:'18–19 Jun',n:'Zermatt · Arca Aparthotel (2 nights)',rm:1912.75,id:'b-acc-zer',paid:true},
+  {cat:'Car',date:'13 Jun',n:'Rental · Enterprise',eur:385,rm:1751.75,id:'b-car',paid:true,itin:'Collect rental car · Milano Centrale'},
+  {cat:'Car',date:'13–16 Jun',n:'Fuel + tolls',eur:202,rm:919.1,id:'b-carfuel',paid:false,est:true,itin:'Drive Milan → Ortisei (via Brixen)'},
+  {cat:'Trains',date:'18 Jun',n:'Venice → Zermatt',rm:865.08,id:'b-tr-vz',paid:true,itin:'Venezia S. Lucia → Milano Centrale'},
+  {cat:'Trains',date:'20 Jun',n:'Zermatt → Paris (Visp/Lausanne)',eur:224.12,rm:1039,id:'b-tr-zp',paid:true,itin:'Lausanne → Paris Gare de Lyon'},
+  {cat:'Trains',date:'22 Jun',n:'Paris → Mont Saint-Michel',eur:135.2,rm:642.2,id:'b-tr-msm',paid:true,itin:'Paris → Mont Saint-Michel'},
+  {cat:'Tickets',date:'13 Jun',n:'Milan Duomo combo (Stairs + Pinacoteca)',eur:44,rm:216.4,id:'b-tk-duomo',paid:true,itin:'Duomo + rooftop terraces'},
+  {cat:'Tickets',date:'16 Jun',n:'Seceda cable car (booked 8:30am)',eur:141,rm:641.55,id:'b-tk-seceda',paid:true,itin:'Seceda summit'},
+  {cat:'Tickets',date:'14 Jun',n:'Alpe di Siusi e-bike (full day)',eur:120,rm:546,id:'b-tk-ebike',paid:false,itin:'E-bike Alpe di Siusi'},
+  {cat:'Tickets',date:'15 Jun',n:'Tre Cime parking',eur:40,rm:182,id:'b-tk-trecime',paid:true,itin:'Tre Cime parking'},
+  {cat:'Tickets',date:'17 Jun',n:'Doge’s Palace',eur:76.18,rm:361.855,id:'b-tk-doge',paid:true,itin:'Doge’s Palace (incl. Bridge of Sighs)'},
+  {cat:'Tickets',date:'17 Jun',n:'St Mark’s Basilica + Museum',eur:40,rm:190,id:'b-tk-marks',paid:true,itin:'St Mark’s Basilica (timed entry)'},
+  {cat:'Tickets',date:'19 Jun',n:'Gornergrat return (2 pax)',chf:264,rm:1412.4,id:'b-tk-gorner',paid:false,itin:'Zermatt → Gornergrat (cogwheel)'},
+  {cat:'Tickets',date:'19 Jun',n:'5-Lakes combo · Blauherd up + Sunnegga down (2 pax, est) — or CHF 59pp return',chf:94,rm:502.9,id:'b-tk-blauherd',paid:false,est:true,itin:'Zermatt → Sunnegga (funicular)'},
+  {cat:'Tickets',date:'19 Jun',n:'Mountain cart · up to 5 descents (2 pax, est)',chf:30,rm:160.5,id:'b-tk-cart',paid:false,est:true,itin:'Mountain cart: Blauherd → Sunnegga'},
+  {cat:'Tickets',date:'19 Jun',n:'Extra gondola single · Sunnegga→Blauherd for the cart (2 pax, est)',chf:40,rm:214,id:'b-tk-xgondola',paid:false,est:true,itin:'Sunnegga → Blauherd (extra single)'},
+  {cat:'Tickets',date:'21 Jun',n:'The Louvre (admission €32)',eur:76,rm:364.8,id:'b-tk-louvre',paid:true,itin:'The Louvre (focused highlights)'},
+  {cat:'Tickets',date:'21 Jun',n:'Sainte-Chapelle',eur:44,rm:211.2,id:'b-tk-saintechap',paid:false,itin:'Sainte-Chapelle'},
+  {cat:'Tickets',date:'22 Jun',n:'Mont-St-Michel Abbey entry (€16pp)',eur:32,rm:153.6,id:'b-tk-msmabbey',paid:false,itin:'Explore Mont Saint-Michel & Abbey'},
+  {cat:'Tickets',date:'23 Jun',n:'Versailles entrance',eur:70,rm:336,id:'b-tk-versailles',paid:true,itin:'Palace of Versailles (half day)'},
+  {cat:'Local transport',date:'12 Jun',n:'Milan · Malpensa Express (€15pp)',eur:30,rm:144,id:'b-lt-mx',paid:false,est:true,itin:'Malpensa Express → Milano Centrale'},
+  {cat:'Local transport',date:'12–13 Jun',n:'Milan · metro (contactless)',eur:7.5,rm:36,id:'b-lt-mil',paid:false,est:true},
+  {cat:'Local transport',date:'16–17 Jun',n:'Venice · vaporetto rides',eur:25,rm:120,id:'b-lt-ven',paid:false,est:true},
+  {cat:'Local transport',date:'20–23 Jun',n:'Paris · Métro/RER + Versailles + CDG',eur:50,rm:240,id:'b-lt-par',paid:false,est:true},
+];
+const COSTBYITIN={}; BUDGET.forEach(e=>{ if(e.itin) COSTBYITIN[e.itin]=e; });
+const ITINLOC={}; DAYS.forEach((d,di)=>d.items.forEach((it,ii)=>{ if(!(it.title in ITINLOC)) ITINLOC[it.title]={di,ii}; })); // title -> itinerary location, for editing booking times from the Budget
+
+const PACK=[
+ {c:'Documents & money',items:[
+   {l:'Passport',s:'+ photocopies / digital copies'},
+   {l:'Travel insurance docs'},
+   {l:'Emirates flight confirmations'},
+   {l:'Hotel & Airbnb confirmations'},
+   {l:'Train tickets',s:'Trip.com · Omio · SNCF Nomad'},
+   {l:'Enterprise car voucher',s:'voucher + driving licence + IDP'},
+   {l:'CIMB cards + cash',s:'some EUR & CHF (Switzerland ≠ euro)'}
+ ]},
+ {c:'Electronics',items:[
+   {l:'Phone + charger'},
+   {l:'Power bank'},
+   {l:'EU adapter (Type C/F)',s:'Italy & France'},
+   {l:'Swiss adapter (Type J)',s:'Switzerland uses a different plug!'},
+   {l:'Camera'}
+ ]},
+ {c:'Clothing',items:[
+   {l:'T-shirts / shorts / sundress',s:'Hot cities — Milan, Venice & Paris (~26–29°C)'},
+   {l:'Base layers (merino/synthetic)',s:'Alpine days — NOT cotton (Dolomites & Zermatt)'},
+   {l:'Warm layers / fleece',s:'+ a light down — Dolomites & Zermatt summits run near-freezing'},
+   {l:'Windbreaker / rain jacket',s:'Waterproof shell: Dolomites are cold & WET; windy Mont-St-Michel coast'},
+   {l:'Hiking / long trousers',s:'Alpine trails + the windy Mont-St-Michel coast'},
+   {l:'Light sweater / cardigan',s:'Cool Paris evenings (esp. the 23rd)'},
+   {l:'Hiking shoes',s:'Alpe di Siusi, Tre Cime, Seceda & the Zermatt 5-Seenweg'},
+   {l:'Comfortable walking shoes',s:'Cities & Mont-St-Michel — cobbles, bridges & steps'},
+   {l:'Shoulders/knees outfit',s:'Duomo & St Mark’s dress code'},
+   {l:'Swimwear',s:'Arca has a spa'},
+   {l:'Beanie + light gloves',s:'Gornergrat & Dolomite summits — near-freezing in wind'},
+   {l:'Buff / neck scarf',s:'Alpine wind & sun (Dolomites, Zermatt)'},
+   {l:'Sunglasses, cap, sunscreen',s:'UV ~8–9; alpine glare doubles on snow'}
+ ]},
+ {c:'Health & misc',items:[
+   {l:'Personal medication'},
+   {l:'Handheld / folding fan',s:'Humid heat in Milan, Venice & the Métro'},
+   {l:'SPF lip balm',s:'Dry alpine air'},
+   {l:'Toiletries'},
+   {l:'Daypack'},
+   {l:'Reusable water bottle'},
+   {l:'Travel umbrella'}
+ ]}
+];
+
+/* ============================= ENRICH (my notes per place) ============================= */
+/* keyed by the item title. story = why it matters · look = what to notice · breakdown = sub-timings · take = my recommendation */
+const ENRICH = {
+ 'Galleria Vittorio Emanuele II':{
+   story:'Opened in 1877, one of the world’s oldest shopping arcades — a glass-and-iron “drawing room” linking the Duomo to La Scala, built to show off a newly unified Italy’s confidence.',
+   look:['The huge glass dome and the four mosaics of the continents','The bull mosaic on the floor (Turin’s crest)','Caffè Camparino — birthplace of the Campari aperitivo'],
+   breakdown:[['Walk through & admire','15 min'],['Spin on the bull / photos','5 min'],['Tea/coffee at a historic café','30 min']],
+   take:'15 min to walk through, ~45 min if you sit for a coffee. Tradition: heel on the bull, spin for luck.'},
+ 'La Scala (from outside)':{
+   story:'Teatro alla Scala (1778) is one of opera’s great stages — Verdi and Puccini premiered here, and a debut can still make or break a singer.',
+   look:['The plain neoclassical facade (the drama is all inside)','The Leonardo da Vinci statue in the piazza opposite','The little museum if you’re curious'],
+   breakdown:[['Exterior + piazza','10 min']],
+   take:'10 min from outside is plenty unless you want the museum (~45 min).'},
+ 'Navigli canals':{
+   story:'These canals once moved the very marble that built the Duomo (engineering of Leonardo’s era). Today the Naviglio Grande is Milan’s aperitivo heartland.',
+   look:['Reflections on the water at dusk','Vicolo dei Lavandai — the old open-air washhouse','Aperitivo: one drink comes with a free buffet (~6–9pm)'],
+   breakdown:[['Stroll the canal','30 min'],['Aperitivo (drink + snacks)','45–60 min']],
+   take:'Perfect first-night wind-down. Do aperitivo here instead of a heavy dinner — cheaper and very local.'},
+ 'Stroll Brera’s lanes':{
+   story:'Brera is Milan’s old artists’ quarter — cobbled lanes, galleries and ivy-draped balconies, the city’s most photogenic, café-lined streets.',
+   look:['Via Fiori Chiari — bohemian, café-lined heart','Via Madonnina — intimate, artisan shops; grab a stool & people-watch','The Brera Academy courtyard & Napoleon statue','Ivy balconies and cobbles for photos'],
+   breakdown:[['Wander the lanes','45 min'],['Coffee / people-watch','20 min']],
+   take:'No agenda — coffee, cobbles and photos. The loop: Via Fiori Chiari → Via Madonnina → Via Brera.'},
+ 'Orto Botanico di Brera':{
+   story:'A pocket botanical garden founded in 1774, hidden right behind the palazzo — home to two giant ginkgo trees among the oldest in Europe.',
+   look:['The ancient ginkgo biloba trees','The herb beds & old greenhouses','How quiet it is, steps from the centre'],
+   breakdown:[['Wander','20–25 min']],
+   take:'Free, calm green breather between the gallery and the Duomo crowds.'},
+ 'Duomo + rooftop terraces':{
+   story:'Milan’s cathedral took ~600 years to build (1386–1965), Italy’s largest. The magic is the rooftop — you walk among 135 spires and 3,400 statues, the only Gothic cathedral that lets you roam its roof.',
+   look:['The Madonnina — the gold statue on the highest spire','The forest of flying buttresses and carved pinnacles up close','The 1786 sundial line set into the floor inside','Modern carvings hidden among the old — even a tennis player'],
+   breakdown:[['Security + entry queue','15–20 min'],['Cathedral interior','25 min'],['Stairs up (≈250 steps) or lift','15 min'],['Rooftop walk + photos','35–45 min'],['Pinacoteca Ambrosiana (your combo)','45–60 min']],
+   take:'Budget ~2–2.5h total. Take the STAIRS up for the slow reveal, lift down to save the legs. If it’s sunny, do the roof first for the best light.'},
+ 'Seceda summit':{
+   story:'Seceda’s knife-edge ridge — the Odle/Geisler peaks — is THE postcard of the Dolomites: tilted green slopes dropping into jagged limestone. A UNESCO World Heritage landscape.',
+   look:['The tilted ridgeline (stand at the viewpoint cross)','June wildflower meadows','The contrast of soft pasture vs vertical grey rock','Fast-moving cloud — it reshapes the scene minute by minute'],
+   breakdown:[['Cable car up','20 min'],['Walk to the ridge viewpoint','15 min'],['Photos + soak it in','30–45 min'],['Optional ridge wander','30 min+']],
+   take:'Go on the first cable car — beats crowds AND cloud. 1–1.5h up top, more if you walk the ridge. A trip highlight; give it room.'},
+ 'E-bike Alpe di Siusi':{
+   story:'Alpe di Siusi (Seiser Alm) is Europe’s largest high-altitude alpine meadow — a rolling ~2,000m plateau ringed by peaks, made for gentle e-biking with non-stop views.',
+   look:['The Sassolungo/Langkofel massif on the skyline','Traditional wooden hay barns dotting the meadow','Summer cows with bells','Rifugi (mountain huts) for coffee and strudel'],
+   breakdown:[['Get bikes + brief','20 min'],['Ride loops with photo stops','3–4h'],['Rifugio lunch / strudel','45 min']],
+   take:'Easy, joyful riding for your style. RETURN BIKES BY 17:00. Pace it with hut stops — it’s about views, not distance.'},
+ 'Tre Cime classic loop hike':{
+   story:'The Tre Cime di Lavaredo — three colossal rock towers — are the icon of the Dolomites and a WWI front line; you’ll pass tunnels and trenches carved into the mountain.',
+   look:['The three peaks changing shape as you circle them','WWI tunnels near the Paternsattel saddle','Rifugio Locatelli with the classic three-towers view','Marmots and alpine choughs along the trail'],
+   breakdown:[['Drive Ortisei → Tre Cime','~2h'],['Classic loop (~10 km)','3–4h'],['Lunch at a rifugio','45 min'],['Drive back','~2h']],
+   take:'Your big hike — worth the 6am start. Moderate, mostly rolling with a few climbs. Go anti-clockwise for the best views sooner.'},
+ 'Piazza San Marco + sunset':{
+   story:'For a thousand years the heart of the Venetian Republic — Napoleon called it “the drawing room of Europe.” At sunset the day-trippers leave and the stone turns gold.',
+   look:['St Mark’s golden mosaics catching low light','The Campanile and the two waterfront columns','Duelling café orchestras (Florian vs Quadri)','The lagoon turning pink toward San Giorgio Maggiore'],
+   breakdown:[['Square + waterfront photos','45 min'],['Sit with the sunset','45 min']],
+   take:'Arrive ~1h before sunset. A drink at a historic café is pricey but the orchestra + setting IS the experience. ~2h.'},
+ 'Rialto Bridge + morning market':{
+   story:'The Rialto was Venice’s commercial heart — effectively the world’s first international finance district. The produce & fish market has run here for ~1,000 years.',
+   look:['The fish market’s lagoon catch (before 9am; closed Sun/Mon)','Shops built right into the bridge’s span','Barges and gondolas working the Grand Canal at dawn','Locals doing real shopping — not a tourist set-piece'],
+   breakdown:[['Bridge + Grand Canal photos','20 min'],['Wander the market','40 min']],
+   take:'Go 7:30–8am for an empty bridge and a lively market. ~1h. Market is quiet Sunday/Monday.'},
+ 'Doge’s Palace (incl. Bridge of Sighs)':{
+   story:'Not a royal home but the seat of the Venetian Republic — the Doge, Senate, courts and prisons under one roof. The Bridge of Sighs links the courtrooms to the cells.',
+   look:['Tintoretto’s “Paradise” in the Great Council Hall — one of the largest oil paintings on Earth (stand under it, look up)','The Golden Staircase (Scala d’Oro)','The cells and the view from inside the Bridge of Sighs','Portraits of every Doge — one painted over in black (a traitor)'],
+   breakdown:[['Security + entry','15–20 min'],['Courtyard + Golden Staircase','15 min'],['State rooms + Great Council Hall','40 min'],['Prisons + Bridge of Sighs','20 min'],['(Optional) Secret Itineraries tour','+75 min']],
+   take:'2.5h is for the full audio-guide / Secret Itineraries crowd. Your focused route — staircase, Great Council Hall, Bridge of Sighs, prisons — gets the whole wow in ~1.5–2h. Skip Secret Itineraries unless the prisons intrigue you.'},
+ 'St Mark’s Basilica (timed entry)':{
+   story:'Venice’s cathedral looks Byzantine for a reason — modelled on Constantinople and filled with treasures (and loot) from the East, including the bronze horses taken in 1204.',
+   look:['8,000 m² of golden mosaics — go when light hits them','The Pala d’Oro altarpiece (small extra fee, worth it)','The bronze horses on the loggia (replicas) + originals inside','The wavy, uneven marble floor (the city is sinking)'],
+   breakdown:[['Timed entry queue','10 min'],['Interior + mosaics','25 min'],['Pala d’Oro / loggia (optional)','15 min']],
+   take:'~30–45 min. Your timed ticket skips the long line — be punctual. Dress code: shoulders & knees covered.'},
+ 'Dorsoduro + Accademia Bridge':{
+   story:'Dorsoduro is Venice’s arty, student quarter — calmer canals, the Accademia and Guggenheim, and the squero (boatyard) of San Trovaso where gondolas are still built.',
+   look:['Gondolas being built/repaired at Squero di San Trovaso','The Accademia Bridge view down the Grand Canal','Santa Maria della Salute’s domes','Cicchetti bars with no menu — just point'],
+   breakdown:[['Wander canals + squero','45 min'],['Accademia Bridge photos','15 min'],['Cicchetti + spritz stops','45 min']],
+   take:'Your wandering sweet spot — unstructured is the point. ~1.5–2h grazing on cicchetti.'},
+ 'Grand Canal vaporetto':{
+   story:'Line 1 down the Grand Canal is the world’s most beautiful bus route — ~4 km past 170 palazzi spanning 600 years of Venetian wealth, for the price of a ticket.',
+   look:['Ca’ d’Oro’s lacy Gothic facade','The Rialto Bridge from the water','Palazzi with front doors opening onto the canal','Faded grandeur — peeling frescoes, tilting chimneys'],
+   breakdown:[['Full ride (San Marco–Rialto–Ferrovia)','40 min']],
+   take:'Grab a seat at the front or the open rear. Riding at dusk as lights come on is magic. A 24/48h pass pays off fast.'},
+ 'Gornergrat summit (3,089m)':{
+   story:'Opened 1898, the Gornergrat Bahn is Europe’s highest open-air cogwheel railway, climbing to 3,089m with the Matterhorn in view the whole way and a glacier panorama at the top.',
+   look:['The Matterhorn — sit on the RIGHT going up','The Gorner Glacier sprawling below the summit','Ibex and marmots on the slopes','The 360° ring of 4,000m peaks from the observatory'],
+   breakdown:[['Cogwheel up (first train)','33 min'],['Summit platform + 360° loop + ZOOOM','~90 min'],['Down 1 stop to Rotenboden','6 min'],['Riffelsee + walk down to Riffelberg','~95 min']],
+   take:'Right side up, first train for a clear, calm Matterhorn. Hop off at Rotenboden for Riffelsee, then walk down to Riffelberg for lunch.'},
+ 'Riffelsee (Matterhorn reflections)':{
+   story:'A small alpine tarn at ~2,750m famous for one thing: on a still morning it mirrors the Matterhorn perfectly — the classic Zermatt shot.',
+   look:['The reflection (calmest water = early morning)','The smaller second pond just below — often emptier','Cotton-grass and alpine flowers at the edges','Get low to the water for the full mirror'],
+   breakdown:[['Walk from Rotenboden station','10 min'],['Reflection photos + wait for stillness','30–45 min'],['Continue hiking down','varies']],
+   take:'Go as early as you can — wind picks up later and kills the mirror. Pair it with the Gornergrat hike-down.'},
+ 'The Louvre (focused highlights)':{
+   story:'The world’s most-visited museum, once a royal palace. It’s impossibly vast — trying to “see it all” is the classic mistake. Pick a route through the greatest hits.',
+   look:['Mona Lisa (smaller than you expect — go early to beat the scrum)','Winged Victory of Samothrace on the grand staircase','Venus de Milo','The Napoleon III Apartments — opulent and often empty','The Egyptian wing if it grabs you'],
+   breakdown:[['Enter via Carrousel/Porte des Lions (skip queue)','10 min'],['Denon wing highlights (Mona Lisa, Victory)','60 min'],['Pick ONE more wing','45 min'],['Coffee / breathe','15 min']],
+   take:'For “museums in small doses,” do a focused ~2–2.5h loop, not a half-day. Pre-pick 5–6 works. Enter via the Carrousel mall to skip the pyramid line.'},
+ 'Sainte-Chapelle':{
+   story:'A royal chapel built in the 1240s to house Christ’s Crown of Thorns. The upper chapel is basically a glass box — 15 windows, 1,100 scenes — one of the supreme achievements of Gothic art.',
+   look:['The 15m stained-glass windows (read bottom-to-top, left-to-right)','The starry blue vaulted ceiling','The jump from the dim lower chapel to the blazing upper one','Late-morning sun lighting the west rose window'],
+   breakdown:[['Security (shared with the law courts)','15 min'],['Lower chapel','5 min'],['Upper chapel — the glass','30–40 min']],
+   take:'Keep it — a ~1h jaw-dropper, 10 min from the Louvre. Go on a sunny late morning so the glass glows.'},
+ 'Explore Mont Saint-Michel & Abbey':{
+   story:'A Benedictine abbey on a tidal island since the 8th century, cut off by some of Europe’s fastest tides. For centuries a great pilgrimage site — the “Wonder of the West.”',
+   look:['The tide — check times; it races in faster than you’d believe','The abbey at the summit + its cloister garden','The single winding main street (touristy but atmospheric)','The bay views — and, if timed, the mont ringed by water'],
+   breakdown:[['Arrive + walk in / shuttle','30 min'],['Climb to the abbey','20 min'],['Abbey visit','60–90 min'],['Ramparts + lunch','60 min']],
+   take:'A long travel day — make the abbey the priority and check the tide schedule first. Comfortable shoes; lots of steps.'},
+ 'Palace of Versailles (half day)':{
+   story:'Louis XIV turned a hunting lodge into the seat of absolute monarchy — a power statement so extravagant it helped spark the Revolution. The Hall of Mirrors saw kings made (and the 1919 Treaty signed).',
+   look:['The Hall of Mirrors — 357 mirrors facing the gardens','The King’s and Queen’s State Apartments','The vast formal gardens + Grand Canal','Marie Antoinette’s rustic Hameau (a long walk, but charming)'],
+   breakdown:[['Security + entry (book a timed slot)','20–30 min'],['State Apartments + Hall of Mirrors','60 min'],['Gardens stroll','60 min'],['(Optional) Trianon + Hameau','+90 min']],
+   take:'Focus on the Apartments + Hall of Mirrors + gardens (~3–3.5h). Skip the far Trianon/Hameau unless you’ve energy. Closed Mondays — your Tuesday is right. Musical Fountains run on weekends.'},
+ 'Eiffel Tower + Seine stroll':{
+   story:'Built as a temporary arch for the 1889 World’s Fair and nearly torn down, the tower became the symbol of Paris — and still sparkles for 5 minutes on every hour after dark.',
+   look:['The hourly sparkle (top of each hour after sunset)','Trocadéro across the river for the full-tower shot','Bateaux on the Seine + Pont Alexandre III','Champ de Mars lawn for a relaxed view'],
+   breakdown:[['Trocadéro viewpoint + photos','30 min'],['Champ de Mars / base','30 min'],['Seine-side stroll','60 min'],['(Optional) summit lift','+90 min']],
+   take:'Aim for golden hour: shoot from Trocadéro, then stroll the Seine as it lights up. Going up is optional — the best view is OF the tower, not from it.'},
+ 'Outlet shopping':{
+   story:'La Vallée Village is a designer outlet ~40 min east of Paris (near Disneyland) — past-season luxury and mid-range at 30–70% off, in an open-air “village.”',
+   look:['The tax-refund desk — claim VAT back as a non-EU resident','Brands rotate — the hits are luck of the day','Cafés to break up the browsing','Shuttle/Eurostar deals if relevant'],
+   breakdown:[['Travel from Paris','40 min'],['Browse + try-on','2–3h'],['VAT refund paperwork','20 min']],
+   take:'Bring your passport for the VAT refund — real savings on bigger buys. Half a day is plenty.'}
+};
+
+/* ---- Verified opening hours + cautions per stop (web-checked against each date) ---- */
+const OPENINFO = {
+ 'Duomo + rooftop terraces':{h:'Open Sat · rooftop to ~8pm Fri–Sun (summer)',c:'Your combo also covers the Pinacoteca Ambrosiana (open Sat 10:00–18:00; closed Weds; ticket office 17:30; ~90 min).'},
+ 'Biblioteca Braidense':{h:'Sat 8:30–13:30 only',c:'It’s a research library — reserve a reading-room seat online + bring photo ID (16+). Short on time? The courtyard is free to admire.'},
+ 'Seceda summit':{h:'Cableway daily 8:30–17:00',c:'Summer 2026 needs a pre-booked 30-min timed-entry slot (book on seceda.it). The plateau’s Fermeda chairlift only opens 20 Jun, so plan to walk the ridge. Your stay is in Barbiano (~35–40 min from the Ortisei cable-car station) — leave by ~7am to catch the first lift.'},
+ 'E-bike Alpe di Siusi':{h:'Rental 8:00–18:00 · Mont Seuc cable car to 18:00'},
+ 'Tre Cime parking':{h:'Road open from late May (snow-dependent)',c:'Reconfirm the toll road is actually open 24–48h before (Rifugio Auronzo Facebook / Park Tre Cime). Pre-book the plate + time slot at pass.auronzo.info — free cancellation only up to 5 days before (≈9 Jun for the 15th).'},
+ 'Rialto Bridge + morning market':{h:'Market mornings only — fish till ~12, produce till ~1:30pm'},
+ 'Doge’s Palace (incl. Bridge of Sighs)':{h:'Wed 9:00–19:00 · last entry 18:00'},
+ 'St Mark’s Basilica (timed entry)':{h:'Mon–Sat 9:30–17:15 · last entry 16:45'},
+ 'Zermatt → Gornergrat (cogwheel)':{h:'First train 07:00 · every 24 min · last down ~19:18'},
+ 'The Louvre (focused highlights)':{h:'Sun 9:00–18:00 · last entry 17:00 (closed Tue)',c:'Heads-up: 21 Jun is France’s Fête de la Musique — free street concerts everywhere tonight (great vibe), but expect big evening crowds near Île de la Cité, the Louvre & Champ de Mars, and harder taxis/driving after 6pm. Museums do NOT extend hours, so do indoor sights by day. Métro/RER run all night on select lines; a ~€4.20 festival day-pass covers it.'},
+ 'Sainte-Chapelle':{h:'Daily 9:00–19:00 · last access 18:30'},
+ 'Eiffel Tower + Seine stroll':{h:'Open daily · summer late hours (lift to ~12:45am — verify exact date)'},
+ 'Explore Mont Saint-Michel & Abbey':{h:'Abbey daily 9:00–19:00 · last entry 18:00 (€16pp)',c:'22 Jun is a low/neap tide (coef 59), so the causeway & shuttle are fine — but no dramatic “grande marée,” and the Mont won’t be fully ringed by water. Your Nomad legs are reserved & locked; the binding constraint is the 17:25 coach off the Mont (next train gets you to Paris 22:16). Pre-book abbey timed entry (~13:30, after a quick packed lunch) at tickets.monuments-nationaux.fr to skip the queue.'},
+ 'Palace of Versailles (half day)':{h:'Tue 9:00–18:30 · last entry ~18:00 (closed Mon)',c:'On a Tuesday you normally get the Musical Gardens (baroque music, fountains mostly static) — the full Grandes Eaux jet show is Sat/Sun, though a few “select Tuesdays” run it; check chateauversailles-spectacles.fr if the jets matter. Music-day gardens need a separate ticket. Trianon opens at 12pm.'},
+ 'Outlet shopping':{h:'Daily 10:00–20:30',c:'La Vallée Village is east of Paris (near Disneyland) — the opposite direction from Versailles, ~1.5h apart. Don’t pair them tightly; treat the outlet as its own half-day.'}
+};
+/* Itinerary Spend amounts now come from the shared BUDGET (via COSTBYITIN) so edits sync both ways. */
+/* ---- Weather & what to wear per base (web-researched, mid-to-late June) ---- */
+const WEATHER = [
+ {loc:'Milan',flag:'it',temp:'Highs ~27°C / lows ~17–19°C',feels:'Warm and a bit muggy; strong midday sun (UV ~8); mild evenings — no chill.',rain:'Mostly dry & sunny, with the odd short afternoon thunderstorm.',
+  wear:'T-shirt & shorts (or a light dress) by day; toss in a thin layer for mild evenings and over-A/C interiors. A cover-up for the Duomo.',
+  items:['Sunglasses','SPF 30–50','Sun hat','Light evening layer','Compact umbrella','Handheld fan','Water bottle']},
+ {loc:'Dolomites',flag:'it',temp:'Valley ~17–19°C day / 7–9°C night · summits ~10–15°C (near-freezing in wind)',feels:'Cold mornings, warm in midday sun, cold in shade/wind — and fierce high-altitude UV (you can be sunburnt and chilly at once).',rain:'Clear mornings, then convective afternoon thunderstorms build over the peaks.',
+  wear:'Layer up. A warm fleece + rain shell every day; t-shirt & shorts only for sunny valley midday; ALWAYS carry a warm layer for the cable-car tops.',
+  items:['Waterproof rain shell','Fleece / warm mid-layer','Merino/synthetic tees (not cotton)','Hiking boots','Beanie + light gloves','Sunglasses + high SPF','Daypack'],
+  note:'Current outlook: 13–14 Jun fine & clear, 15–16 Jun turning wet — front-load Seceda/Alpe di Siusi into 13–14 and keep rain gear ready for Tre Cime. Re-check 2–3 days before.'},
+ {loc:'Venice',flag:'it',temp:'Highs ~26–27°C / lows ~17–20°C',feels:'Hot & sticky (humid ~74%), peak UV midday; pleasant mornings & evenings.',rain:'Mostly warm & sunny with short, sharp afternoon thunderstorms.',
+  wear:'T-shirt & shorts or a sundress; a light layer for evenings; shoulders/knees cover for St Mark’s. Most important: broken-in walking shoes (endless bridges & cobbles).',
+  items:['Handheld/battery fan','Sunglasses + SPF','Sun hat','Compact umbrella','Comfy walking shoes','Church cover-up','Water bottle']},
+ {loc:'Zermatt',flag:'ch',temp:'Village ~13–18°C day / 3–7°C night · Gornergrat (3,089 m) −2 to +5°C, windy',feels:'Mild in village sun, cold in shade & at night; the Gornergrat/Riffelsee top feels wintry — biting wind and snow glare.',rain:'Bright mornings, then afternoon showers/storms; weather flips fast.',
+  wear:'Village: t-shirt + a light layer. Gornergrat/Riffelsee: dress for winter — base + fleece/down + windproof shell, beanie & gloves. Never go up in just a tee.',
+  items:['Windproof/waterproof shell','Warm down/fleece layer','Beanie + gloves','Strong-UV sunglasses','High SPF + lip balm','Hiking shoes','Daypack']},
+ {loc:'Paris',flag:'fr',temp:'Highs ~23–25°C / lows ~13–15°C · Mont-St-Michel coast ~19–21°C & windy',feels:'Pleasantly warm but humid; very strong sun (UV 8–9, long days). The coast feels ~5°C colder with the sea wind.',rain:'Changeable — sunny spells with passing showers; occasional evening storm.',
+  wear:'Paris: t-shirt & shorts/dress + a light layer for cool evenings. Mont-St-Michel day: long trousers + a warm windproof layer (cold sea breeze), even if Paris is warm.',
+  items:['Compact umbrella + rain shell','Sunglasses + SPF','Light sweater/cardigan','Windproof jacket (coast day)','Comfy walking shoes','Handheld fan (Métro)','Water bottle']}
+];
+function gWeather(){
+  const row=(ic,name,txt)=>`<div class="ga-mode" style="grid-template-columns:16px 1fr"><span class="gm-ic">${svg(ic)}</span><span><span class="gm-name">${name}</span><span class="gm-note">${to12h(txt)}</span></span></div>`;
+  const cards=WEATHER.map(w=>gsec('sun',w.loc,
+    row('sun','Temperature',w.temp)+row('info','Feels like',w.feels)+(w.rain?row('bulb','Rain',w.rain):'')+
+    `<div class="take"><b>Wear:</b> ${w.wear}</div>
+     <div class="wpack">${w.items.map(i=>`<span class="wpill">${i}</span>`).join('')}</div>
+     ${w.note?`<div class="ga-line"><b>Heads-up:</b> ${to12h(w.note)}</div>`:''}`, w.flag)).join('');
+  return `<div class="ga-head">Weather &amp; what to wear</div>${cards}`;
+}
+
+/* ---- WEATHER TAB: forecast-based, day-by-day clothing plan (scanned ~11 Jun 2026) ---- */
+const WEATHERPLAN = [
+ {loc:'Milan',flag:'it',days:'12–13 Jun',temp:'~27–28°C / 15–18°C · hot city',
+  cond:'Mostly dry; chance of a short afternoon thunderstorm.',
+  clothes:'T-shirt + shorts or a dress; a thin layer for mild evenings & over-A/C interiors. A shoulder cover for the Duomo.',
+  shoes:'Comfy sneakers / walking shoes.',
+  acc:['Sunglasses','SPF 30–50','Sun hat','Compact umbrella','Water bottle']},
+ {loc:'Dolomites',flag:'it',days:'13 PM – 16 Jun',temp:'Valley ~12–17°C / 2–6°C · COLD & WET',
+  cond:'13 Jun ~12°C & ~15 mm rain · 14 Jun ~15°C & ~6 mm rain. At altitude (2,000–2,900 m) it’s near-freezing, windy, with sleet or snow possible.',
+  clothes:'Full layers every day: merino/synthetic base (not cotton) + warm fleece or light down + a waterproof shell. Hiking trousers; shorts only for sunny valley midday.',
+  shoes:'Proper hiking boots/shoes with grip — wet, muddy, rocky trails (e-bike, Tre Cime, Seceda).',
+  acc:['Beanie','Light gloves','Buff / scarf','Sunglasses','High SPF + lip balm','Daypack','Keep the rain shell on you'],
+  alert:'Coldest, wettest stretch — running well below the seasonal average. Keep rain gear on hand and front-load the clearer activities to 13–14 Jun where you can.'},
+ {loc:'Venice',flag:'it',days:'16 PM – 18 Jun',temp:'~26–28°C / 20–21°C · hot & humid',
+  cond:'Humid; short, sharp afternoon thunderstorms possible.',
+  clothes:'T-shirt + shorts or a sundress; a light layer for evenings; shoulders/knees cover for St Mark’s.',
+  shoes:'Broken-in walking shoes — endless bridges & cobbles (matters most here).',
+  acc:['Handheld fan','Sunglasses + SPF','Sun hat','Compact umbrella','Church cover-up','Water bottle']},
+ {loc:'Zermatt',flag:'ch',days:'18 PM – 20 Jun',temp:'Village ~13–18°C / 3–7°C · summits −2 to +6°C',
+  cond:'19 Jun mountain day (Gornergrat 3,089 m + the 5-Seenweg ~2,500–2,700 m): biting wind, snow patches and glare.',
+  clothes:'Village: t-shirt + a light layer. 19 Jun: winter kit — base + fleece/down + windproof/waterproof shell. Never go up in just a tee.',
+  shoes:'Hiking shoes for the 5-Seenweg; sneakers fine in the village.',
+  acc:['Beanie','Gloves','Strong-UV sunglasses','High SPF + lip balm','Daypack','Swimwear (spa)']},
+ {loc:'Paris',flag:'fr',days:'20 PM – 21 · 23–24 Jun',temp:'~22–29°C / 12–16°C · warm & dry',
+  cond:'21 Jun ~29°C, easing to ~22°C by 23 Jun. Long daylight, strong sun, mostly dry.',
+  clothes:'T-shirt + shorts/dress; a light sweater or cardigan for cooler evenings (and the 23rd). A smart-casual layer for dinners out.',
+  shoes:'Comfy walking shoes (Louvre, Versailles gardens).',
+  acc:['Sunglasses + SPF','Light umbrella','Handheld fan (Métro)','Water bottle']},
+ {loc:'Mont-St-Michel',flag:'fr',days:'22 Jun',temp:'Coast ~19–21°C · WINDY',
+  cond:'Feels ~5°C colder than Paris that morning; strong sea wind; ~27% chance of rain.',
+  clothes:'Long trousers + a warm windproof layer even though Paris is warm — pack it in your daypack for the train.',
+  shoes:'Comfy closed walking shoes — steep, stepped climb to the abbey.',
+  acc:['Windproof jacket','Light rain layer','Sunglasses','Water bottle']},
+];
+function renderWeather(){
+  const card=w=>gsec('sun',`${w.loc} · ${w.days}`,
+    `<div class="ga-primary"><b>${w.temp}</b></div>
+     <div class="ga-line">${to12h(w.cond)}</div>
+     <div class="take"><b>Wear:</b> ${w.clothes}</div>
+     <div class="ga-line"><b>Shoes:</b> ${w.shoes}</div>
+     <div class="wpack">${w.acc.map(a=>`<span class="wpill">${a}</span>`).join('')}</div>
+     ${w.alert?`<div class="opencaution">${svg('warn')}<span>${w.alert}</span></div>`:''}`, w.flag);
+  const intro=`<div class="note-banner" style="background:var(--accent-soft);border-color:#ecd9cd;color:#7a3a1f">
+    <b>Three climates in 12 days.</b> Hot, humid cities (~28°C) · cold, wet Alpine days (highs 12–17°C, near-freezing nights, possible snow up high) · a windy, cool coast. Pack for two seasons at once — and note the Dolomites are running colder & wetter than usual.</div>`;
+  const accRows=[
+    ['Beanie + gloves','Dolomites 15–16 + Zermatt mountain day 19'],
+    ['Waterproof / windproof shell','Dolomites 13–16 · Mont-St-Michel 22 · handy anywhere'],
+    ['Warm fleece / light down','All Alpine days — 14–16 & 19'],
+    ['Hiking boots + city walking shoes','Bring both (sandals optional for Venice heat / spa)'],
+    ['Sunglasses + SPF 30–50 + lip balm','Cities and alpine snow-glare'],
+    ['Sun hat + handheld fan + compact umbrella','Milan, Venice, Paris'],
+    ['Swimwear · daypack · water bottle','Zermatt spa; daypack & bottle on every hiking day'],
+  ];
+  const accCard=`<div class="ga-head">Pack once — used across the trip</div><div class="gsec">${accRows.map(r=>`<div class="ga-mode" style="grid-template-columns:16px 1fr"><span class="gm-ic">${svg('check')}</span><span><span class="gm-name">${r[0]}</span><span class="gm-note">${r[1]}</span></span></div>`).join('')}</div>`;
+  const reliability=`<div class="opencaution" style="margin-top:4px">${svg('info')}<span><b>Forecast reliability:</b> 12–18 Jun (Milan, Dolomites, Venice) is solid (1–7 days out). Zermatt, Paris & Mont-St-Michel (19–24 Jun) are still 8–13 days out — treat as guidance and re-check 2–3 days before; Alpine & coast numbers swing fast.</span></div>`;
+  document.getElementById('weather').innerHTML = intro + WEATHERPLAN.map(card).join('') + accCard + reliability;
+}
+
+/* ============================= STATE ============================= */
+const LS={book:'eu26.book', paid:'eu26.paid', pack:'eu26.pack', packCustom:'eu26.packCustom'};
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
+const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+
+/* ---- Your saved edits are sticky -------------------------------------------------
+   Everything you type or toggle in the app — budget amounts, start times, durations,
+   notes, paid/booked pills, added rows, custom row order — is saved in your browser
+   and ALWAYS takes precedence over the values written in this file. So when the source
+   text, details or figures are edited, your keyed-in values are NOT overwritten.
+   The only way a saved edit could detach is if the KEY it's stored under changes:
+   per-item data is keyed by `dayIndex|itemTitle`; budget/booking data by line `id`.
+   If a title or id is ever renamed, record it below and the saved value is carried
+   across on load (idempotent — safe to keep forever). Nothing here ever CLEARS data.
+   ⚠️ RENAMED AN ITEM TITLE? add to KEY_RENAMES.  RENAMED A BUDGET/BOOK id? add to ID_RENAMES. */
+const KEY_RENAMES = [
+  [10,'Lunch','Lunch (packed)'],               // 22 Jun · Mont-St-Michel
+  [10,'Dinner','Late dinner in Paris'],        // 22 Jun
+  [10,'Return to Paris','Pontorson → Paris'],  // 22 Jun (return train split into coach + train)
+  [7,'Gornergrat Railway up','Gornergrat summit (3,089m)'],                          // 19 Jun · Zermatt rebuild
+  [7,'Lake Riffelsee (Matterhorn reflection)','Riffelsee (Matterhorn reflections)'],// 19 Jun
+  [7,'Lunch','Lunch — Riffelhaus 1853'],                                            // 19 Jun
+  [7,'Home cook + 1 meal out','Dinner'],                                            // 19 Jun
+];
+const ID_RENAMES = [
+  // ['old-id','new-id'],  // if a budget/booking line id ever changes, carry over the edited amount + paid/booked state
+];
+(function migrateSavedEdits(){
+  ['eu26.times','eu26.durmin','eu26.posnat','eu26.poscur','eu26.notes'].forEach(name=>{
+    const o=load(name,{}); let dirty=false;
+    KEY_RENAMES.forEach(([di,a,b])=>{ const ok=di+'|'+a, nk=di+'|'+b;
+      if(ok in o && !(nk in o)){ o[nk]=o[ok]; delete o[ok]; dirty=true; } });
+    if(dirty) save(name,o);
+  });
+  const ord=load('eu26.order',{}); let od=false;
+  KEY_RENAMES.forEach(([di,a,b])=>{ const arr=ord[di]; if(Array.isArray(arr)){ const i=arr.indexOf(a); if(i>=0){ arr[i]=b; od=true; } } });
+  if(od) save('eu26.order',ord);
+  ['eu26.costnat','eu26.paid','eu26.book'].forEach(name=>{
+    const o=load(name,{}); let dirty=false;
+    ID_RENAMES.forEach(([a,b])=>{ if(a in o && !(b in o)){ o[b]=o[a]; delete o[a]; dirty=true; } });
+    if(dirty) save(name,o);
+  });
+})();
+
+let bookState=load(LS.book,{});      // id -> true|false|'deciding'
+let paidState=load(LS.paid,{});      // id -> true|false
+let packState=load(LS.pack,{});      // key -> true
+let packCustom=load(LS.packCustom,{});// cat -> [labels]
+let timeOv=load('eu26.times',{}); // 'di-ii' -> 'HH:MM' user overrides (cascade downstream)
+let durOv=load('eu26.durmin',{}); // 'di-ii' -> minutes override (changing a duration pushes later start times)
+function parseDurMin(s){ if(!s) return null; const t=String(s).toLowerCase();
+  if(/half\s*day/.test(t)) return 240; if(/full\s*day|whole\s*day/.test(t)) return 480;
+  if(/evening/.test(t)) return 180; if(/flex/.test(t)) return 90;
+  const h=t.match(/(\d+(?:\.\d+)?)\s*h/), m=t.match(/(\d+)\s*m(?:in)?\b/); let v=0,f=false;
+  if(h){v+=Math.round(parseFloat(h[1])*60);f=true;} if(m){v+=parseInt(m[1]);f=true;} return f?v:null; }
+function fmtDurMin(m){ if(m==null) return ''; if(m<60) return m+' min'; const h=Math.floor(m/60),mm=m%60; return h+'h'+(mm?` ${mm}m`:''); }
+const ik=(di,ii)=>di+'|'+DAYS[di].items[ii].title; // STABLE per-item key (day order is fixed; survives row inserts)
+const effDurMin=(di,ii,label)=>{const k=ik(di,ii); return (k in durOv)?durOv[k]:parseDurMin(label);};
+const durLabel=(di,ii,label)=>{const k=ik(di,ii); return (k in durOv)?fmtDurMin(durOv[k]):label;};
+function onDurEdit(di,ii,val){ const newMin=parseInt(val); if(isNaN(newMin)) return;
+  const day=DAYS[di], old=effDurMin(di,ii, day.items[ii].dur||day.items[ii].travel||'');
+  durOv[ik(di,ii)]=newMin;
+  const delta=newMin-(old==null?newMin:old);
+  if(delta){ const _o=orderedIdx(di), _ps=_o.indexOf(ii); for(let _p=_ps+1;_p<_o.length;_p++){const j=_o[_p], itj=day.items[j]; if(isFixed(itj)) break; if(isClock(itj.t)) timeOv[ik(di,j)]=fromMin(toMin(effTime(di,j,itj.t))+delta);} }
+  save('eu26.durmin',durOv); save('eu26.times',timeOv); renderDays();
+}
+const isClock=t=>typeof t==='string'&&/^\d{1,2}:\d{2}$/.test(t);
+const pad2=t=>{const a=t.split(':'); return (a[0].length<2?'0'+a[0]:a[0])+':'+a[1];};
+const toMin=t=>{const a=pad2(t).split(':'); return (+a[0])*60+(+a[1]);};
+const fromMin=x=>{x=((x%1440)+1440)%1440; const h=Math.floor(x/60),m=x%60; return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;};
+const effTime=(di,ii,base)=>{const it=DAYS[di]&&DAYS[di].items[ii]; if(it&&isFixed(it)) return base; /* locked tickets always show their true time, ignoring any stale device override */ const k=ik(di,ii); return (k in timeOv)?timeOv[k]:base;};
+function onTimeEdit(di,ii,val){
+  if(!isClock(val)) return;
+  const day=DAYS[di], oldEff=effTime(di,ii,day.items[ii].t);
+  const delta=toMin(val)-toMin(oldEff);
+  timeOv[ik(di,ii)]=pad2(val);
+  if(delta){ const _o=orderedIdx(di), _ps=_o.indexOf(ii); for(let _p=_ps+1;_p<_o.length;_p++){const j=_o[_p], itj=day.items[j]; if(isFixed(itj)) break; if(isClock(itj.t)) timeOv[ik(di,j)]=fromMin(toMin(effTime(di,j,itj.t))+delta);} }
+  save('eu26.times',timeOv); renderDays();
+}
+function resetTimes(){timeOv={}; durOv={}; save('eu26.times',timeOv); save('eu26.durmin',durOv); renderDays();}
+function exportEdits(){ const o={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.indexOf('eu26.')===0) o[k]=localStorage.getItem(k);} const blob=new Blob([JSON.stringify(o,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='europe-trip-edits.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+function importEdits(file){ if(!file) return; const r=new FileReader(); r.onload=()=>{ try{ const o=JSON.parse(r.result); let n=0; Object.keys(o).forEach(k=>{ if(k.indexOf('eu26.')===0){ localStorage.setItem(k,o[k]); n++; } }); alert('Restored '+n+' saved settings. Reloading…'); location.reload(); }catch(e){ alert('Sorry — that file could not be read as a backup.'); } }; r.readAsText(file); }
+
+function bookOf(b){ return (b.id in bookState)?bookState[b.id]:b.s; }
+function paidOf(it){ return (it.id in paidState)?paidState[it.id]:it.paid; }
+/* ---- Currencies. Spend shows native (EUR/CHF/MYR); totals convert to MYR at these rates. ---- */
+const RATE={MYR:1, EUR:4.8, CHF:5.35};
+const SYM={MYR:'RM', EUR:'€', CHF:'CHF'};
+const curOf=e=>e.cur||(e.chf!=null?'CHF':(e.eur!=null?'EUR':'MYR'));
+const natBase=e=>e.chf!=null?+e.chf:(e.eur!=null?+e.eur:+e.rm);
+const rateOf=e=>{const nb=natBase(e); return nb?(+e.rm/nb):1;}; // preserves each line's original MYR
+function curForCC(c){ return c==='ch'?'CHF':((c==='my'||c==='ae')?'MYR':'EUR'); }
+function dayCur(d){ const cc=(d&&d.cc)||[]; return curForCC(cc[cc.length-1]||'it'); }
+// Pre-filled per-meal estimates (local currency, per person). Used as the default Spend for meal rows; editable & summed into the Food budget.
+const MEALEST={ EUR:{breakfast:8,lunch:18,dinner:35,gelato:5,snack:6,default:15}, CHF:{breakfast:12,lunch:30,dinner:55,gelato:6,snack:9,default:25}, MYR:{breakfast:20,lunch:40,dinner:70,gelato:15,snack:15,default:35} };
+function mealType(t){ t=String(t).toLowerCase(); if(t.includes('breakfast')||t.includes('brunch'))return'breakfast'; if(t.includes('lunch'))return'lunch'; if(t.includes('dinner'))return'dinner'; if(t.includes('gelato')||t.includes('dessert'))return'gelato'; if(t.includes('coffee')||t.includes('spritz')||t.includes('aperitivo')||t.includes('caffè')||t.includes('drinks'))return'snack'; return'default'; }
+function mealEst(di,ii){ const it=DAYS[di]&&DAYS[di].items[ii]; if(!it||it.k!=='meal') return null; const tbl=MEALEST[dayCur(DAYS[di])]||MEALEST.EUR; const v=tbl[mealType(it.title)]; return v!=null?v:tbl.default; }
+let costOv=load('eu26.costnat',{}); // id -> native-amount override (predefined lines)
+let posCost=load('eu26.posnat',{}); // 'di-ii' -> native amount (user-added rows)
+let posCur=load('eu26.poscur',{}); // 'di-ii' -> currency (defaults to the day's currency)
+const effNat=e=>{ if(!e) return 0; if(e.pos) return (posCost[e.k]!=null)?+posCost[e.k]:(e.def!=null?+e.def:0); return (e.id in costOv)?+costOv[e.id]:natBase(e); };
+const effRm=e=>{ if(!e) return 0; return e.pos ? effNat(e)*(RATE[e.cur]||1) : effNat(e)*rateOf(e); };
+function setCost(id,val){const v=parseFloat(val); if(isNaN(v)||v<0) return; costOv[id]=Math.round(v*100)/100; save('eu26.costnat',costOv); renderDays(); renderBudget();}
+function setPosCostKey(k,val){ if(val===''||val==null){ delete posCost[k]; delete posCur[k]; } else { const v=parseFloat(val); if(isNaN(v)||v<0) return; posCost[k]=Math.round(v*100)/100; if(!(k in posCur)) posCur[k]=dayCur(DAYS[+k.slice(0,k.indexOf('|'))]); } save('eu26.posnat',posCost); save('eu26.poscur',posCur); renderDays(); renderBudget(); }
+function setPosCost(di,ii,val){ setPosCostKey(ik(di,ii),val); }
+let noteOv=load('eu26.notes',{}); // 'di-ii' -> free-text note for that row
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function editNote(di,ii){ const k=ik(di,ii);
+  openNoteModal(noteOv[k]||'', val=>{ const t=val.replace(/[ \t]+\n/g,'\n').replace(/\s+$/,''); if(t) noteOv[k]=t; else delete noteOv[k]; save('eu26.notes',noteOv); renderDays(); });
+}
+function openNoteModal(initial,onSave){
+  const ov=document.createElement('div'); ov.className='note-modal';
+  ov.innerHTML=`<div class="note-box"><div class="note-h">Note for this stop</div><textarea class="note-ta" rows="5" placeholder="Type your note…  press Enter for a new line"></textarea><div class="note-hint">Enter = new line · ⌘/Ctrl+Enter saves · Esc cancels</div><div class="note-actions"><button class="note-cancel">Cancel</button><button class="note-save">Save</button></div></div>`;
+  document.body.appendChild(ov);
+  const ta=ov.querySelector('.note-ta'); ta.value=initial; ta.focus(); try{ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}
+  const close=()=>ov.remove(), submit=()=>{ onSave(ta.value); close(); };
+  ov.querySelector('.note-cancel').onclick=close;
+  ov.querySelector('.note-save').onclick=submit;
+  ov.onmousedown=e=>{ if(e.target===ov) close(); };
+  ta.onkeydown=e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){ e.preventDefault(); submit(); } else if(e.key==='Escape'){ e.preventDefault(); close(); } };
+}
+let orderOv=load('eu26.order',{}); // di -> [title,...] custom row order (lets you move rows up/down)
+function orderedIdx(di){ const items=DAYS[di].items, saved=orderOv[di]; if(!saved||!saved.length) return items.map((_,i)=>i);
+  const byT={}; items.forEach((it,i)=>{ if(!(it.title in byT)) byT[it.title]=i; }); const out=[],used=new Set();
+  saved.forEach(t=>{ if(t in byT && !used.has(byT[t])){ out.push(byT[t]); used.add(byT[t]); } }); items.forEach((_,i)=>{ if(!used.has(i)) out.push(i); }); return out; }
+const dmin=(di,p)=>{ const it=DAYS[di].items[p]; return effDurMin(di,p,it.dur||it.travel||'')||0; }; // minutes an item takes
+const hopMin=it=>(it.hop&&it.hop.t)?(parseDurMin(it.hop.t)||0):0; // walking/travel time to reach it
+const isAnchor=it=>isFixed(it)||!!it.mode; // booked OR a transit leg (flight/train/drive): own real clock time, never duration-chained
+// Re-time from startPos downward so each activity/meal begins when the previous one ends (+ walk); chaining resets at transit legs & bookings.
+function reflowFrom(di,startPos){ const order=orderedIdx(di), items=DAYS[di].items; let cursor=null;
+  for(let p=startPos-1;p>=0;p--){ const it=items[order[p]]; if(isAnchor(it)) break; const t=effTime(di,order[p],it.t); if(isClock(t)){ cursor=toMin(t)+dmin(di,order[p]); break; } }
+  for(let p=startPos;p<order.length;p++){ const j=order[p], it=items[j], t=effTime(di,j,it.t);
+    if(isAnchor(it)){ cursor=null; continue; }
+    if(!isClock(t)) continue;
+    if(cursor==null){ cursor=toMin(t)+dmin(di,j); continue; }
+    const start=cursor+hopMin(it); timeOv[ik(di,j)]=fromMin(start); cursor=start+dmin(di,j); }
+  save('eu26.times',timeOv); }
+function moveItem(di,ii,dir){ const order=orderedIdx(di), pos=order.indexOf(ii), np=pos+dir; if(np<0||np>=order.length) return;
+  const a=order[pos]; order[pos]=order[np]; order[np]=a; orderOv[di]=order.map(i=>DAYS[di].items[i].title); save('eu26.order',orderOv);
+  reflowFrom(di,np); renderDays(); }
+function sortDay(di){ const items=DAYS[di].items;
+  // 1) order rows by their current time (untimed rows stay attached to the stop above them)
+  let prev=-1; const sv=items.map((it,i)=>{ const t=effTime(di,i,it.t); if(isClock(t)){ prev=toMin(t); return prev*100; } return prev*100+50; });
+  const order=items.map((_,i)=>i).sort((x,y)=>(sv[x]-sv[y])||(x-y)); orderOv[di]=order.map(i=>items[i].title);
+  // 2) only push a stop later if it would overlap the previous one (respects durations + walks; keeps intended gaps; booked times anchor)
+  let cursor=null;
+  for(let p=0;p<order.length;p++){ const j=order[p], it=items[j], t=effTime(di,j,it.t);
+    if(isAnchor(it)){ cursor=null; continue; }
+    if(!isClock(t)) continue;
+    let start=toMin(t); if(cursor!=null){ const mn=cursor+hopMin(it); if(start<mn) start=mn; }
+    timeOv[ik(di,j)]=fromMin(start); cursor=start+dmin(di,j); }
+  save('eu26.order',orderOv); save('eu26.times',timeOv); renderDays(); }
+function isFixed(it){ return !!it.lock || !!(it.book && bookOf(it.book)===true); } // it.lock = confirmed ticket on file (permanently locked); else ANY booking marked done = fixed start time
+// Budget rows generated from the itinerary: every meal (pre-filled estimate) + any per-row cost you add. Skips items already in BUDGET to avoid double-counting.
+/* Per-day base location — labels each budget row with where you'll be. An item's own
+   `place` wins when set; otherwise this town-level fallback shows (esp. for Food rows). */
+const DAYBASE = ['Milan','Ortisei / Brixen','Alpe di Siusi · Barbiano','Tre Cime · Ortisei','Dolomites → Venice','Venice','Venice → Zermatt','Zermatt','Zermatt → Paris','Paris','Mont-St-Michel','Versailles · Paris','En route home'];
+function whereOf(di,it){ return (it&&it.place)||DAYBASE[di]||''; }
+function autoEntries(){ const out=[]; DAYS.forEach((d,di)=>{ d.items.forEach((it,ii)=>{
+    if(it.k==='warn'||COSTBYITIN[it.title]) return;
+    const k=ik(di,ii), def=mealEst(di,ii), pv=posCost[k];
+    if(pv==null && def==null) return; // no cost on this row
+    const cat = it.k==='meal'?'Food':(it.mode?'Local transport':'Activities');
+    out.push({cat,date:d.date,n:it.title,id:'pos:'+k,pos:true,k,def,cur:(posCur[k]||dayCur(d)),paid:false,est:true,where:whereOf(di,it)}); }); });
+  return out; }
+
+/* ============================= RENDER: status pill ============================= */
+function statusPill(b){
+  const s=bookOf(b);
+  const cls = s===true?'booked':(s==='deciding'?'deciding':'tobook');
+  const txt = s===true?('Booked'+(b.L?` · ${to12h(b.L)}`:'')):(s==='deciding'?'Deciding · decide today':'To book');
+  const ic  = s===true?'check':(s==='deciding'?'clock':'ticket');
+  return `<button class="status ${cls}" data-book="${b.id}">${svg(ic)}${txt}</button>`;
+}
+// Confirmed ticket on file: a non-clickable, permanently-locked status badge (no data-book ⇒ never bound, never cycles).
+function lockedPill(b){ return `<span class="status booked" style="cursor:default" title="Confirmed ticket on file — locked">${svg('lock')}Ticketed${b.L?` · ${to12h(b.L)}`:''}</span>`; }
+function cycleBook(id){
+  const cur = id in bookState ? bookState[id] : findDefaultBook(id);
+  const next = cur===false ? true : (cur===true ? 'deciding' : false); // to-book -> booked -> deciding -> to-book
+  bookState[id]=next; save(LS.book,bookState);
+  renderDays(); renderOverview();
+}
+function findDefaultBook(id){
+  for(const d of DAYS){ for(const it of (d.items||[])){ if(it.book&&it.book.id===id) return it.book.s; } if(d.stay&&d.stay.book&&d.stay.book.id===id) return d.stay.book.s; }
+  return false;
+}
+
+/* ============================= RENDER: itinerary ============================= */
+function renderItem(it,di,ii){
+  const cls=['item'];
+  if(it.mode) cls.push('transit'); else cls.push(it.k);
+  const ic = kindIcon(it.k,it);
+  let chips='';
+  if(it.book) chips+=it.lock?lockedPill(it.book):statusPill(it.book);
+  if(it.place) chips+=`<a class="maplink" href="${mapUrl(it.place)}" target="_blank" rel="noopener">${svg('pin')}Map</a>`;
+  const oi=OPENINFO[it.title];
+  if(oi&&oi.h) chips+=`<span class="chip open">${svg('check')}${to12h(oi.h)}</span>`;
+  if(it.mode){const _f=it.fare||(it.mode==='walk'?'free':''); if(_f) chips+=`<span class="chip fare">${svg(modeIcon(it.mode))}${_f}</span>`;}
+  chips+=`<button class="notebtn" data-note="${di}-${ii}">${svg('note')}Note</button>`;
+  chips+=`<span class="movegrp"><button class="movebtn" data-mv="-1" data-di="${di}" data-ii="${ii}" aria-label="Move up">↑</button><button class="movebtn" data-mv="1" data-di="${di}" data-ii="${ii}" aria-label="Move down">↓</button></span>`;
+  const ce=COSTBYITIN[it.title];
+  const fixed=isFixed(it);
+  const eff=effTime(di,ii,it.t);
+  const timeEl = (isClock(eff)&&!fixed)
+    ? `<input type="time" class="tedit" data-di="${di}" data-ii="${ii}" value="${pad2(eff)}" aria-label="Edit start time">`
+    : (eff?`<span class="time${fixed?' fixed':''}">${to12h(eff)}${fixed?svg('lock'):''}</span>`:'');
+  const baseDur = it.dur || it.travel || '';
+  let durCell='<div class="idur"></div>';
+  if(baseDur){
+    if(fixed && it.mode){
+      durCell=`<div class="idur transit"><span class="durrow">${svg(modeIcon(it.mode))}<span>${to12h(baseDur)}</span></span>${it.dist?`<small>${it.dist}</small>`:''}</div>`;
+    } else {
+      const cur=effDurMin(di,ii,baseDur)||0, h=Math.floor(cur/60), m=cur%60;
+      const hOpts=Array.from({length:13},(_,i)=>`<option value="${i}"${i===h?' selected':''}>${i}h</option>`).join('');
+      const mset=[...new Set([m,0,5,10,15,20,25,30,35,40,45,50,55])].sort((a,b)=>a-b);
+      const mOpts=mset.map(v=>`<option value="${v}"${v===m?' selected':''}>${v}m</option>`).join('');
+      durCell=`<div class="idur${it.mode?' transit':''} ed"><span class="durrow"><select class="duredit durh" data-di="${di}" data-ii="${ii}" aria-label="Hours">${hOpts}</select><select class="duredit durm" data-di="${di}" data-ii="${ii}" aria-label="Minutes">${mOpts}</select></span>${(!it.dur&&it.dist)?`<small>${it.dist}</small>`:''}</div>`;
+    }
+  }
+  let costCell='<div class="icost"></div>';
+  if(ce){const nat=effNat(ce), cur=curOf(ce), locked=paidOf(ce), st=locked?'paid':(ce.est?'est':'tobook');
+    costCell = locked
+      ? `<div class="icost ${st}">${SYM[cur]} ${fmt(nat)}<small>paid</small></div>`
+      : `<div class="icost ${st} ed"><span class="amtwrap"><span class="rmx">${SYM[cur]}</span><input type="number" inputmode="decimal" class="amtedit" data-id="${ce.id}" value="${nat}" min="0" step="1" aria-label="Edit ${it.title} cost"></span><small>${ce.est?'est':'to book'}</small></div>`;
+  } else if(it.k!=='warn'){
+    const k=ik(di,ii), pid='pos:'+k, pv=posCost[k], ppaid=(pid in paidState)?paidState[pid]:false, cur=posCur[k]||dayCur(DAYS[di]);
+    const def=mealEst(di,ii), eff=(pv!=null)?pv:def, has=eff!=null; // meals come pre-filled with an estimate
+    costCell = (has&&ppaid)
+      ? `<div class="icost paid">${SYM[cur]} ${fmt(eff)}<small>paid</small></div>`
+      : `<div class="icost ${has?'est':'empty'} ed"><span class="amtwrap"><span class="rmx">${SYM[cur]}</span><input type="number" inputmode="decimal" class="amtedit pos" data-k="${k}" value="${has?eff:''}" min="0" step="1" placeholder="+" aria-label="Cost for ${it.title}"></span>${has?'<small>est</small>':''}</div>`;
+  }
+  return `<div class="${cls.join(' ')}">
+    <div class="rail"><span class="dot">${svg(ic)}</span></div>
+    <div class="body">
+      ${it.hop?`<div class="hop">${svg(modeIcon(it.hop.mode||'walk'))}<span>${((m)=>m[0].toUpperCase()+m.slice(1))(it.hop.mode||'walk')} · ${it.hop.t}${it.hop.d?` · ${it.hop.d}`:''}${(it.hop.fare||it.hop.mode==='walk')?` · ${it.hop.fare||'free'}`:''}</span></div>`:''}
+      <div class="line1">${timeEl}<span class="ttl2">${to12h(it.title)}</span></div>
+      ${it.detail?`<div class="detail">${to12h(it.detail)}</div>`:''}
+      ${noteOv[ik(di,ii)]?`<div class="usernote">${svg('note')}<span class="utext">${esc(noteOv[ik(di,ii)])}</span><button class="ne" data-note="${di}-${ii}">edit</button></div>`:''}
+      ${chips?`<div class="chips">${chips}</div>`:''}
+      ${oi&&oi.c?`<div class="opencaution">${svg('info')}<span>${to12h(oi.c)}</span></div>`:''}
+      ${enrichPanel(it.title)}
+    </div>
+    ${durCell}
+    ${costCell}
+  </div>`;
+}
+function enrichPanel(title){
+  const e=ENRICH[title]; if(!e) return '';
+  const look=(e.look||[]).map(x=>`<div>${svg('eye')}<span>${to12h(x)}</span></div>`).join('');
+  const bd=(e.breakdown||[]).map(r=>`<div class="bd"><span class="bt">${r[0]}</span><span class="bv">${r[1]}</span></div>`).join('');
+  return `<details class="why"><summary>${svg('bulb')}Why go &amp; timing — my notes</summary>
+    <div class="wbody">
+      <div class="wstory">${to12h(e.story)}</div>
+      ${look?`<div class="wsub">Look for</div><div class="look">${look}</div>`:''}
+      ${bd?`<div class="wsub">Time breakdown</div>${bd}`:''}
+      ${e.take?`<div class="take"><b>My take:</b> ${to12h(e.take)}</div>`:''}
+    </div></details>`;
+}
+function renderStay(stay){
+  if(!stay) return '';
+  if(stay.free) return `<div class="free-stay">${svg('bed')} ${stay.free}</div>`;
+  let alts='';
+  if(stay.alts){
+    alts=`<details class="alt"><summary>Stays considered in Ortisei (${stay.alts.length})</summary>`+
+      stay.alts.map(a=>`<div class="alt-row${a.booked?' booked':''}"><span class="an">${a.n}</span><span class="ap">${a.p}</span></div>`).join('')+`</details>`;
+  }
+  return `<div class="stay">
+    <div class="row">
+      <span class="dot" style="color:var(--accent)">${svg('bed')}</span>
+      <div><div class="nm">${stay.nm}</div><div class="nt">${stay.nt||''}</div></div>
+      ${stay.rm?`<div class="price"><b>RM ${fmt(stay.rm)}</b><span>RM ${fmt(stay.night)}/nt</span></div>`:''}
+    </div>
+    <div class="chips" style="margin-top:9px">
+      ${stay.book?statusPill(stay.book):''}
+      ${stay.place?`<a class="maplink" href="${mapUrl(stay.place)}" target="_blank" rel="noopener">${svg('pin')}Map</a>`:''}
+    </div>
+  </div>${alts}`;
+}
+function flagsHtml(cc){return `<div class="flags">${cc.map(c=>`<span class="flag ${c}"></span>`).join('')}</div>`;}
+function renderDays(){
+  document.getElementById('days').innerHTML = DAYS.map((d,i)=>`
+    <article class="day" id="day-${i}">
+      <div class="day-head">
+        ${flagsHtml(d.cc)}
+        <div class="meta">
+          <div class="dt">${d.dow} · ${d.date}</div>
+          <div class="ttl">${d.title}</div>
+          ${d.sub?`<div class="sm">${to12h(d.sub)}</div>`:''}
+        </div>
+        <button class="sortbtn" data-sort="${i}" title="Reorder this day's rows by time">⇅ Time-sort</button>
+      </div>
+      <div class="tl"><div class="tlhead"><span></span><span></span><span class="thr">Duration</span><span class="thr">Spend</span></div>${orderedIdx(i).map(ii=>renderItem(d.items[ii],i,ii)).join('')}</div>
+      ${dayTotal(d,i)}
+      ${renderStay(d.stay)}
+    </article>`).join('');
+  bindBookButtons();
+  document.querySelectorAll('.tedit').forEach(inp=>{inp.onchange=()=>onTimeEdit(+inp.dataset.di,+inp.dataset.ii,inp.value);});
+  document.querySelectorAll('#days.amtedit:not(.pos)').forEach(inp=>inp.onchange=()=>setCost(inp.dataset.id,inp.value));
+  document.querySelectorAll('#days.amtedit.pos').forEach(inp=>inp.onchange=()=>setPosCostKey(inp.dataset.k,inp.value));
+  document.querySelectorAll('#days.idur.ed').forEach(cell=>{const hs=cell.querySelector('.durh'),ms=cell.querySelector('.durm'); if(!hs||!ms) return; const f=()=>onDurEdit(+hs.dataset.di,+hs.dataset.ii,(+hs.value)*60+(+ms.value)); hs.onchange=f; ms.onchange=f;});
+  document.querySelectorAll('#days [data-note]').forEach(b=>b.onclick=()=>{const p=b.dataset.note.split('-'); editNote(+p[0],+p[1]);});
+  document.querySelectorAll('#days.movebtn').forEach(b=>b.onclick=()=>moveItem(+b.dataset.di,+b.dataset.ii,+b.dataset.mv));
+  document.querySelectorAll('#days.sortbtn').forEach(b=>b.onclick=()=>sortDay(+b.dataset.sort));
+  spyDays();
+}
+function dayTotal(d,di){
+  const cs=[];
+  d.items.forEach((it,ii)=>{ const ce=COSTBYITIN[it.title]; if(ce){cs.push(ce); return;}
+    if(it.k==='warn') return; const k=ik(di,ii), def=mealEst(di,ii); if(posCost[k]!=null||def!=null) cs.push({pos:true,k,id:'pos:'+k,def,cur:(posCur[k]||dayCur(d))}); });
+  if(!cs.length) return '';
+  let tot=0, paid=0; const byCur={};
+  cs.forEach(e=>{ const rm=effRm(e), cur=e.pos?e.cur:curOf(e); tot+=rm; if(paidOf(e)) paid+=rm; byCur[cur]=(byCur[cur]||0)+effNat(e); });
+  const order=['EUR','CHF','MYR'];
+  const nat=order.filter(c=>byCur[c]).map(c=>`${SYM[c]} ${fmt(byCur[c])}`).join(' · ');
+  const rest=tot-paid;
+  return `<div class="daytotal">${nat?`<span class="dt-nat">${nat}</span>`:''}<b>≈ RM ${fmt(tot)}</b>${paid?` · <span class="p">${fmt(paid)} paid</span>`:''}${rest?` · <span class="u">${fmt(rest)} to come</span>`:''}</div>`;
+}
+function bindBookButtons(){
+  document.querySelectorAll('[data-book]').forEach(b=>b.onclick=()=>cycleBook(b.getAttribute('data-book')));
+}
+
+/* ============================= RENDER: overview ============================= */
+function countBooked(){
+  let total=0,booked=0;
+  const seen=new Set();
+  for(const d of DAYS){
+    for(const it of d.items){ if(it.book && !seen.has(it.book.id)){seen.add(it.book.id); total++; if(bookOf(it.book)===true) booked++;} }
+    if(d.stay&&d.stay.book&&!seen.has(d.stay.book.id)){seen.add(d.stay.book.id); total++; if(bookOf(d.stay.book)===true) booked++;}
+  }
+  return {total,booked};
+}
+/* ---- Route map data (real coords, drawn in travel order) ---- */
+const MAPNODES=[
+ {n:'Milan',s:'arrive',lat:45.464,lon:9.190,lx:0,ly:34,anc:'middle'},
+ {n:'Dolomites',s:'Ortisei',lat:46.576,lon:11.670,lx:0,ly:-44,anc:'middle'},
+ {n:'Venice',s:'',lat:45.438,lon:12.327,lx:0,ly:34,anc:'middle'},
+ {n:'Zermatt',s:'',lat:46.020,lon:7.749,lx:0,ly:-22,anc:'middle'},
+ {n:'Paris',s:'depart',lat:48.857,lon:2.352,lx:0,ly:-44,anc:'middle'}
+];
+const MSM={n:'Mont-St-Michel',s:'day trip',lat:48.636,lon:-1.511,lx:0,ly:32,anc:'middle'};
+const MAPLEGS=[
+ {mode:'drive',t:'~4h',d:'290 km'},
+ {mode:'drive',t:'~3h',d:'210 km'},
+ {mode:'train',t:'7h 2m',d:'4 changes'},
+ {mode:'train',t:'7h 30m',d:'2 changes'}
+];
+function hav(a,b){const R=6371,r=x=>x*Math.PI/180;
+  const dLat=r(b.lat-a.lat),dLon=r(b.lon-a.lon);
+  const s=Math.sin(dLat/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLon/2)**2;
+  return Math.round(2*R*Math.asin(Math.sqrt(s)));}
+function mapSVG(){
+  const W=1000,H=470,padX=90,padT=72,padB=96;
+  const cl=Math.cos(46.5*Math.PI/180);
+  const N=MAPNODES, all=[...N,MSM];
+  const pj=p=>({x:p.lon*cl,y:-p.lat});
+  const P=all.map(pj), xs=P.map(p=>p.x), ys=P.map(p=>p.y);
+  const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
+  const sc=Math.min((W-2*padX)/(maxx-minx),(H-padT-padB)/(maxy-miny));
+  const usedW=(maxx-minx)*sc,usedH=(maxy-miny)*sc;
+  const ox=(W-usedW)/2-minx*sc, oy=padT+((H-padT-padB)-usedH)/2-miny*sc;
+  const X=p=>pj(p).x*sc+ox, Y=p=>pj(p).y*sc+oy;
+  const COUNTRIES=[
+   {n:'FRANCE',lab:[47.6,3.3],pts:[[50.9,1.9],[50.5,4.0],[48.6,7.8],[47.5,7.6],[46.2,6.1],[45.4,6.7],[43.7,7.5],[43.3,5.4],[42.5,3.0],[42.8,1.0],[43.4,-1.6],[45.0,-1.1],[47.5,-3.0],[48.4,-4.8],[49.7,-1.6],[49.5,0.2]]},
+   {n:'SWITZERLAND',lab:[46.75,8.3],pts:[[46.2,6.1],[46.5,6.6],[47.4,7.0],[47.6,7.6],[47.7,8.6],[47.4,9.5],[46.9,10.5],[46.2,9.0],[45.95,7.7],[46.4,6.9]]},
+   {n:'ITALY',lab:[45.5,10.7],pts:[[45.7,7.0],[46.1,9.2],[46.5,11.3],[46.6,13.6],[45.6,13.8],[45.4,12.3],[44.4,12.2],[43.6,13.5],[41.1,16.9],[40.5,18.0],[39.8,18.4],[38.0,15.7],[40.8,14.2],[41.9,12.3],[42.7,11.1],[44.1,9.8],[44.4,8.9],[43.8,7.5],[44.4,7.4]]}
+  ];
+  let geo='';
+  COUNTRIES.forEach(co=>{
+    const d=co.pts.map((p,i)=>`${i?'L':'M'} ${X({lat:p[0],lon:p[1]}).toFixed(1)} ${Y({lat:p[0],lon:p[1]}).toFixed(1)}`).join(' ')+' Z';
+    geo+=`<path d="${d}" fill="#b4532a" fill-opacity="0.025" stroke="#bcb09e" stroke-width="1.4" stroke-dasharray="2 6" stroke-linejoin="round"/>`;
+    geo+=`<text x="${X({lat:co.lab[0],lon:co.lab[1]}).toFixed(1)}" y="${Y({lat:co.lab[0],lon:co.lab[1]}).toFixed(1)}" text-anchor="middle" font-size="19" font-weight="700" letter-spacing="2" fill="#c8bcab">${co.n}</text>`;
+  });
+  let lines='';
+  for(let i=0;i<N.length-1;i++) lines+=`<line x1="${X(N[i])}" y1="${Y(N[i])}" x2="${X(N[i+1])}" y2="${Y(N[i+1])}" stroke="#b4532a" stroke-width="3.5" stroke-linecap="round" opacity="0.85"/>`;
+  lines+=`<line x1="${X(N[4])}" y1="${Y(N[4])}" x2="${X(MSM)}" y2="${Y(MSM)}" stroke="#9a9082" stroke-width="2.5" stroke-dasharray="2 7" stroke-linecap="round"/>`;
+  let labs='';
+  for(let i=0;i<MAPLEGS.length;i++){const a=N[i],b=N[i+1];const mx=(X(a)+X(b))/2,my=(Y(a)+Y(b))/2;
+    labs+=`<text x="${mx}" y="${my-9}" text-anchor="middle" font-size="23" font-weight="700" fill="#b4532a" style="paint-order:stroke;stroke:#fffdf9;stroke-width:5px">${MAPLEGS[i].t}</text>`;}
+  {const mx=(X(N[4])+X(MSM))/2,my=(Y(N[4])+Y(MSM))/2;
+    labs+=`<text x="${mx}" y="${my-7}" text-anchor="middle" font-size="18" font-weight="600" fill="#6f665a" style="paint-order:stroke;stroke:#fffdf9;stroke-width:5px">~4–4.5h</text>`;}
+  let pins='';
+  N.forEach((nd,i)=>{const x=X(nd),y=Y(nd);
+    pins+=`<circle cx="${x}" cy="${y}" r="15" fill="#b4532a"/><text x="${x}" y="${y+6}" text-anchor="middle" font-size="20" font-weight="800" fill="#fff">${i+1}</text>`+
+      `<text x="${x+nd.lx}" y="${y+nd.ly}" text-anchor="${nd.anc}" font-size="26" font-weight="750" fill="#211c16">${nd.n}</text>`+
+      (nd.s?`<text x="${x+nd.lx}" y="${y+nd.ly+22}" text-anchor="${nd.anc}" font-size="18" fill="#6f665a">${nd.s}</text>`:'');});
+  pins+=`<circle cx="${X(MSM)}" cy="${Y(MSM)}" r="10" fill="#fffdf9" stroke="#9a9082" stroke-width="2.5"/>`+
+    `<text x="${X(MSM)+MSM.lx}" y="${Y(MSM)+MSM.ly}" text-anchor="middle" font-size="20" font-weight="650" fill="#6f665a">${MSM.n}</text>`+
+    `<text x="${X(MSM)+MSM.lx}" y="${Y(MSM)+MSM.ly+19}" text-anchor="middle" font-size="16" fill="#9a9082">${MSM.s}</text>`;
+  const kmU=hav(N[0],N[4])/Math.hypot(X(N[0])-X(N[4]),Y(N[0])-Y(N[4])), barU=200/kmU, bx=72, by=H-30;
+  const scale=`<line x1="${bx}" y1="${by}" x2="${bx+barU}" y2="${by}" stroke="#6f665a" stroke-width="3"/>`+
+    `<line x1="${bx}" y1="${by-7}" x2="${bx}" y2="${by+7}" stroke="#6f665a" stroke-width="3"/>`+
+    `<line x1="${bx+barU}" y1="${by-7}" x2="${bx+barU}" y2="${by+7}" stroke="#6f665a" stroke-width="3"/>`+
+    `<text x="${bx+barU/2}" y="${by-11}" text-anchor="middle" font-size="18" fill="#6f665a">≈ 200 km</text>`;
+  const comp=`<text x="${W-44}" y="46" text-anchor="middle" font-size="20" fill="#9a9082">N</text>`+
+    `<path d="M${W-44} 52 l-6 11 h12 z" fill="#9a9082"/>`;
+  return `<svg class="rmap" viewBox="0 0 ${W} ${H}" role="img" aria-label="Route map of the trip"><g id="rmapG">${geo}${lines}${scale}${comp}${labs}${pins}</g></svg>`;
+}
+function legsList(){
+  const ico=m=>svg(m==='train'?'train':m==='plane'?'plane':'car');
+  const row=(badge,fly,from,to,mode,t,d)=>`<div class="lrow"><span class="lbadge${fly?' fly':''}">${badge}</span>
+    <div class="lmain"><div class="lroute">${from} <span class="larr">→</span> ${to}</div>
+    <div class="lmeta">${ico(mode)} ${(x=>x[0].toUpperCase()+x.slice(1))(mode==='plane'?'flight':mode)} · ${t}${d?` · ${d}`:''}</div></div></div>`;
+  let h=row(svg('plane'),true,'Kuala Lumpur','Milan','plane','~14h','via Dubai');
+  for(let i=0;i<MAPLEGS.length;i++) h+=row(`${i+1}`,false,MAPNODES[i].n,MAPNODES[i+1].n,MAPLEGS[i].mode==='drive'?'car':'train',MAPLEGS[i].t,MAPLEGS[i].d);
+  h+=row(svg('plane'),true,'Paris','Kuala Lumpur','plane','~20h','via Dubai');
+  h+=`<div class="ltrip">Day trips from Paris: ${svg('train')} Mont-St-Michel · ~4–4.5h each way &nbsp;·&nbsp; ${svg('train')} Versailles · ~45 min (RER C)</div>`;
+  return `<div class="legslist">${h}</div>`;
+}
+function renderOverview(){
+  const c=countBooked();
+  document.getElementById('overview').innerHTML=
+    `<h2>Route map</h2>`+
+    `<div class="rmap-wrap">${mapSVG()}<div class="rmap-zoom"><button data-z="in" aria-label="Zoom in">+</button><button data-z="out" aria-label="Zoom out">−</button><button data-z="reset" aria-label="Reset view">⟲</button></div></div>`+
+    `<div class="rmap-note">Drag to pan · scroll or use +/− to zoom. Pins sit at real geography (uniform scale = true distance); dotted lines are approximate country borders. Leg labels are <b>actual travel time</b>, not straight-line distance.</div>`+
+    `<h2 style="margin-top:16px">Travel between stops</h2>`+legsList()+
+    `<div class="stat-row" style="margin-top:14px">
+      <div class="stat"><span class="v">13 days</span><span class="k">12–24 Jun</span></div>
+      <div class="stat"><span class="v">5 bases</span><span class="k">+ day trips</span></div>
+      <div class="stat"><span class="v">${c.booked}/${c.total}</span><span class="k">bookings done</span></div>
+    </div>`;
+  wireMap();
+}
+function wireMap(){
+  const svg=document.querySelector('.rmap'); if(!svg) return;
+  const g=svg.querySelector('#rmapG'); if(!g) return;
+  const vb=svg.viewBox.baseVal; let s=1,tx=0,ty=0; const MIN=0.7,MAX=5;
+  const apply=()=>{g.setAttribute('transform',`translate(${tx} ${ty}) scale(${s})`); svg.style.touchAction=s>1.02?'none':'';};
+  const clamp=v=>Math.max(MIN,Math.min(MAX,v));
+  const zoomAt=(cx,cy,f)=>{const ns=clamp(s*f),k=ns/s; tx=cx-(cx-tx)*k; ty=cy-(cy-ty)*k; s=ns; apply();};
+  const toVB=e=>{const r=svg.getBoundingClientRect(); return {x:(e.clientX-r.left)/r.width*vb.width,y:(e.clientY-r.top)/r.height*vb.height};};
+  svg.addEventListener('wheel',e=>{e.preventDefault(); const p=toVB(e); zoomAt(p.x,p.y,e.deltaY<0?1.15:1/1.15);},{passive:false});
+  let drag=null;
+  svg.addEventListener('pointerdown',e=>{if(s<=1.02)return; drag={x:e.clientX,y:e.clientY}; svg.setPointerCapture(e.pointerId); svg.style.cursor='grabbing';});
+  svg.addEventListener('pointermove',e=>{if(!drag)return; const r=svg.getBoundingClientRect(); tx+=(e.clientX-drag.x)*(vb.width/r.width); ty+=(e.clientY-drag.y)*(vb.height/r.height); drag={x:e.clientX,y:e.clientY}; apply();});
+  const end=()=>{drag=null; svg.style.cursor='';};
+  svg.addEventListener('pointerup',end); svg.addEventListener('pointercancel',end);
+  document.querySelectorAll('.rmap-zoom [data-z]').forEach(btn=>btn.onclick=()=>{const z=btn.getAttribute('data-z'); if(z==='reset'){s=1;tx=0;ty=0;apply();return;} zoomAt(vb.width/2,vb.height/2,z==='in'?1.3:1/1.3);});
+}
+
+/* ============================= RENDER: budget ============================= */
+function fmt(n){return (Math.round(n*100)/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});}
+/* ---- Food prices per base (web-researched 2025–26, per person, local currency) ---- */
+const FOODPRICES=[
+ {loc:'Milan',flag:'it',casual:'€18–28',dinner:'€35–55',
+  rows:[['Espresso (standing)','€1.10–1.40'],['Cappuccino (standing)','€1.50–2'],['Pizza / panino lunch','€6–14'],['Gelato (2 scoops)','€2.50–4'],['Beer 0.5L','€5–8'],['House wine, glass','€4–8']],
+  tip:'Drink coffee standing at the bar (“al banco”) — seated in the Galleria/Duomo costs 3–5×. Best value: <b>aperitivo</b> (€10–15 buys a drink + a buffet that can replace dinner, ~6–9pm). A €2–3 coperto is normal; tap water is rarely free.'},
+ {loc:'Dolomites',flag:'it',casual:'€20–30',dinner:'€35–55',
+  rows:[['Espresso (valley → hut)','€1.30–3'],['Apple strudel slice','€5–9'],['Rifugio hot dish','€12–20'],['Valley pizza','€8–12'],['Beer 0.5L','€4.50–8'],['Water 0.5L','€2–3.50']],
+  tip:'Mountain rifugi add a clear altitude premium (~50–100% over the valley). Coperto is rarer here (Austrian-leaning). Tap/spring water is excellent — carry a refillable bottle. Supermarkets (Despar, MPreis) & bakeries do cheap speck rolls & strudel; pack a lunch for the hikes.'},
+ {loc:'Venice',flag:'it',casual:'€15–25',dinner:'€30–50',
+  rows:[['Espresso (standing)','€1.20–1.50'],['Cicchetti (each)','€1.50–3.50'],['Ombra (small wine)','€1.20–2.50'],['Gelato (2 scoops)','€3–5'],['Trattoria pasta','€12–18'],['Beer 0.5L','€4–6']],
+  tip:'Best value: a <b>bacaro crawl</b> — stand at the counter, eat cicchetti + an ombra (€6–12 for a light meal). Avoid anything in sight of San Marco/Rialto (40–100% pricier, tourist traps); eat in Cannaregio, Dorsoduro or Castello. Check the coperto on the menu (tourist spots inflate it to €6–8).'},
+ {loc:'Zermatt',flag:'ch',casual:'CHF 35–55',dinner:'CHF 70–110',
+  rows:[['Espresso','CHF 4.50–5'],['Sit-down lunch dish','CHF 24–35'],['Mountain rösti / main','CHF 30–50'],['Cheese fondue (pp)','CHF 28–38'],['Beer 0.5L','CHF 7.50–9'],['Self-cater: pasta/water/bread','CHF ~2 / ~1 / 1–3']],
+  tip:'Switzerland runs ~20–30% above already-pricey Swiss averages — your <b>cook-at-the-apartment</b> plan is the big saver. Both Migros & Coop are in the village (Migros ~10% cheaper but sells NO alcohol — buy beer/wine at Coop/Denner). Tap water is often NOT free — ask. No tipping needed.'},
+ {loc:'Paris',flag:'fr',casual:'€15–25',dinner:'€30–50',
+  rows:[['Espresso (standing)','€1.50–2'],['Café crème','€4–6'],['Croissant','€1.20–1.50'],['Jambon-beurre sandwich','€4–6'],['Bistro main','€15–20'],['Beer 0.5L','€6–8']],
+  tip:'Best value: the weekday <b>formule/menu du midi</b> (2 courses ~€14–20) — same kitchen, far cheaper than dinner. Tap water is FREE & a legal right — ask for “une carafe d’eau”. No coperto; service is included (tip optional, just round up). Boulangerie sandwiches & street crêpes are the cheap eats; outer arrondissements (11th/18th/19th/20th) beat the centre.'}
+];
+/* per-day food estimate, split on travel days between the two places */
+const FOODCC={ it:{cur:'EUR',lo:45,hi:65,flag:'it'}, ch:{cur:'CHF',lo:45,hi:90,flag:'ch'}, fr:{cur:'EUR',lo:35,hi:55,flag:'fr'} };
+const CCNAME={ it:'Italy', ch:'Switzerland', fr:'France' };
+const FOODDAYS=[ /* one row per day, by country; arrival/departure days are half (part) */
+ {date:'12 Jun',cc:'it',ctx:'Milan · arrival evening',part:true},
+ {date:'13 Jun',cc:'it',ctx:'Milan → Dolomites'},
+ {date:'14 Jun',cc:'it',ctx:'Dolomites'},
+ {date:'15 Jun',cc:'it',ctx:'Dolomites'},
+ {date:'16 Jun',cc:'it',ctx:'Dolomites → Venice'},
+ {date:'17 Jun',cc:'it',ctx:'Venice'},
+ {date:'18 Jun',cc:'ch',ctx:'Venice → Zermatt',country:'Italy → Switzerland'},
+ {date:'19 Jun',cc:'ch',ctx:'Zermatt'},
+ {date:'20 Jun',cc:'fr',ctx:'Zermatt → Paris',country:'Switzerland → France'},
+ {date:'21 Jun',cc:'fr',ctx:'Paris'},
+ {date:'22 Jun',cc:'fr',ctx:'Mont-St-Michel day trip'},
+ {date:'23 Jun',cc:'fr',ctx:'Paris'},
+ {date:'24 Jun',cc:'fr',ctx:'fly home (morning)',part:true}
+];
+function renderFoodPrices(){
+  let tLo=0,tHi=0;
+  const rows=FOODDAYS.map(r=>{ const c=FOODCC[r.cc], rate=RATE[c.cur]; let lo=c.lo,hi=c.hi; if(r.part){lo=Math.round(lo/2);hi=Math.round(hi/2);} tLo+=lo*rate; tHi+=hi*rate;
+    return `<div class="fpd"><div class="fpd-main"><span class="fpd-place"><span class="flag ${c.flag}"></span>${r.country||CCNAME[r.cc]}</span><span class="fpd-date">${r.date} · ${r.ctx}${r.part?' · ½ day':''}</span></div><div class="fpd-cost">${SYM[c.cur]} ${lo}–${hi}<small>≈ RM ${fmt(Math.round(lo*rate))}–${fmt(Math.round(hi*rate))}</small></div></div>`; }).join('');
+  const guide=FOODPRICES.map(f=>{ const pr=f.rows.map(x=>`<div class="fp-row"><span>${x[0]}</span><span class="fp-p">${x[1]}</span></div>`).join('');
+    return gsec('food',f.loc,`<div class="fp-avg"><div><span class="fp-k">Casual meal</span><span class="fp-v">${f.casual} pp</span></div><div><span class="fp-k">Mid-range dinner</span><span class="fp-v">${f.dinner} pp</span></div></div>${pr}<div class="ga-line"><b>Tips:</b> ${f.tip}</div>`,f.flag); }).join('');
+  document.getElementById('foodPrices').innerHTML=
+    `<h2 style="margin:20px 0 6px">Food — estimate per day</h2>`+
+    `<div class="rmap-note" style="margin-bottom:8px">Per person, eating out moderately. “Part-day” = a travel day split between two places (≈ half a day’s meals each). Zermatt is much cheaper if you cook at the apartment.</div>`+
+    `<div class="fpcard">${rows}<div class="fpd fpd-total"><div class="fpd-main"><span class="fpd-place">Whole-trip food</span><span class="fpd-date">eating out, per person</span></div><div class="fpd-cost">≈ RM ${fmt(Math.round(tLo))}–${fmt(Math.round(tHi))}<small>2 pax ≈ RM ${fmt(Math.round(tLo*2))}–${fmt(Math.round(tHi*2))}</small></div></div></div>`+
+    `<details class="alt" style="margin-top:14px"><summary>Price guide — what individual items cost per city</summary>${guide}</details>`;
+}
+function setBookingTime(di,ii,val){ if(!isClock(val)) return; timeOv[ik(di,ii)]=pad2(val); save('eu26.times',timeOv); renderDays(); renderBudget(); } // edit a booking time from the Budget → updates the itinerary
+function renderBudget(){
+  let total=0,paid=0,topay=0;
+  const allRows=BUDGET.concat(autoEntries());
+  allRows.forEach(it=>{ const rm=effRm(it); total+=rm; if(paidOf(it)) paid+=rm; else topay+=rm; });
+  const pct = total? Math.round(paid/total*100):0;
+  document.getElementById('btotals').innerHTML=`
+    <div class="bcard full"><div class="k">Total trip cost (2 pax)</div>
+      <div class="v">RM ${fmt(total)} <small>· RM ${fmt(total/2)} per pax</small></div>
+      <div class="bbar"><i style="width:${pct}%"></i></div>
+    </div>
+    <div class="bcard"><div class="k">Paid</div><div class="v" style="color:var(--ok)">RM ${fmt(paid)}</div></div>
+    <div class="bcard"><div class="k">Still to pay</div><div class="v" style="color:var(--warn)">RM ${fmt(topay)}</div></div>`;
+
+  const cats=[...new Set(allRows.map(b=>b.cat))];
+  document.getElementById('budgetList').innerHTML = cats.map(cat=>{
+    const inCat=allRows.filter(b=>b.cat===cat); const catRm=inCat.reduce((a,it)=>a+effRm(it),0);
+    const rows=inCat.map(it=>{
+      const rm=effRm(it), nat=effNat(it), cur=it.pos?it.cur:curOf(it), p=paidOf(it);
+      const pillCls=p?'booked':'tobook'; const pillTxt=p?'Paid':'To pay'; const pillIc=p?'check':'ticket';
+      const loc=it.itin?ITINLOC[it.itin]:null;
+      const where=it.where||(loc?whereOf(loc.di,DAYS[loc.di].items[loc.ii]):null);
+      const bt=loc?effTime(loc.di,loc.ii,DAYS[loc.di].items[loc.ii].t):null;
+      const timeCell=(loc&&isClock(bt))?` · <input type="time" class="btimeedit" data-di="${loc.di}" data-ii="${loc.ii}" value="${bt}" title="Booking time — edits the itinerary">`:'';
+      return `<div class="brow">
+        <div class="bp"><div class="bn">${it.n}${it.est?' <span style="color:var(--faint);font-weight:500">(est.)</span>':''}${(it.itin||it.pos)?' <span class="linked" title="Linked to the itinerary">↔ itinerary</span>':''}</div>
+          <div class="bd">${it.date}${timeCell}</div>
+          ${where?`<div class="bwhere">${svg('pin')}<span>${esc(where)}</span></div>`:''}
+          <div class="chips" style="margin-top:6px"><button class="status ${pillCls}" data-paid="${it.id}">${svg(pillIc)}${pillTxt}</button></div>
+        </div>
+        <div class="amt"><b><span class="rmx">${SYM[cur]}</span><input type="number" inputmode="decimal" class="amtedit${it.pos?' pos':''}" ${it.pos?`data-k="${it.k}"`:`data-id="${it.id}"`} value="${nat}" min="0" step="1" aria-label="Edit ${it.n} cost"></b>${cur==='MYR'?`<span>RM ${fmt(rm/2)}/pax</span>`:`<span class="eur">≈ RM ${fmt(rm)}</span>`}</div>
+      </div>`;
+    }).join('');
+    return `<div class="bcat"><h3><span>${cat}</span><span class="bcat-sum">RM ${fmt(catRm)}</span></h3>${rows}</div>`;
+  }).join('');
+
+  document.querySelectorAll('#budgetList [data-paid]').forEach(b=>b.onclick=()=>{
+    const id=b.getAttribute('data-paid');
+    const it=allRows.find(x=>x.id===id);
+    paidState[id]= !paidOf(it); save(LS.paid,paidState); renderBudget(); renderDays();
+  });
+  document.querySelectorAll('#budgetList.amtedit:not(.pos)').forEach(inp=>inp.onchange=()=>setCost(inp.dataset.id,inp.value));
+  document.querySelectorAll('#budgetList.amtedit.pos').forEach(inp=>inp.onchange=()=>setPosCostKey(inp.dataset.k,inp.value));
+  document.querySelectorAll('#budgetList.btimeedit').forEach(inp=>inp.onchange=()=>setBookingTime(+inp.dataset.di,+inp.dataset.ii,inp.value));
+
+  // shortlist reference
+  document.getElementById('altWrap').innerHTML=`<summary>Accommodation shortlist (reference)</summary>
+    <div class="bd" style="padding:6px 0 10px;color:var(--muted)">Green = booked. Others were considered.</div>
+    ${[['Milan · Palazzo Loreto (booked)','RM 664',1],['Milan · Heart Hotel (Brera)','RM 821',0],
+       ['Ortisei · Barbian (booked)','RM 2,373',1],['Ortisei · Ativa Suites','RM 2,361',0],['Ortisei · Bonichhof','RM 2,103',0],['Ortisei · Brixen','RM 2,365',0],['Ortisei · Garni Belalp','RM 2,606',0],['Ortisei · Pension Belaval','RM 710',0],['Ortisei · Apartment Auta','RM 3,224',0],['Ortisei · Rooftop Margherita','RM 3,612',0],['Ortisei · Chalet Albric','RM 2,638',0],
+       ['Venice · Fondamenta Rizzi (booked)','RM 1,503',1],['Zermatt · Arca Aparthotel (booked)','RM 1,913',1]]
+      .map(r=>`<div class="alt-row${r[2]?' booked':''}"><span class="an">${r[0]}</span><span class="ap">${r[1]}</span></div>`).join('')}`;
+}
+
+/* ============================= RENDER: packing ============================= */
+function packKey(cat,label){return cat+'::'+label;}
+function renderPack(){
+  document.getElementById('packList').innerHTML = PACK.map((cat,ci)=>{
+    const custom=(packCustom[cat.c]||[]).map(l=>({l}));
+    const all=[...cat.items,...custom];
+    const done=all.filter(it=>packState[packKey(cat.c,it.l)]).length;
+    const rows=all.map(it=>{
+      const key=packKey(cat.c,it.l); const isDone=!!packState[key];
+      const isCustom=(packCustom[cat.c]||[]).includes(it.l);
+      return `<div class="pitem${isDone?' done':''}" data-key="${encodeURIComponent(key)}">
+        <span class="box">${svg('check')}</span>
+        <span class="lbl">${it.l}${it.s?`<small>${it.s}</small>`:''}</span>
+        ${isCustom?`<button class="rm" data-rm="${encodeURIComponent(cat.c)}|${encodeURIComponent(it.l)}" title="Remove">×</button>`:''}
+      </div>`;
+    }).join('');
+    return `<details class="pcat" open>
+      <summary>${cat.c}<span class="count">${done}/${all.length}</span></summary>
+      ${rows}
+      <div class="padd"><input type="text" placeholder="Add item…" data-add="${ci}"><button data-addbtn="${ci}">Add</button></div>
+    </details>`;
+  }).join('');
+
+  document.querySelectorAll('.pitem').forEach(el=>el.onclick=(e)=>{
+    if(e.target.closest('[data-rm]')) return;
+    const key=decodeURIComponent(el.getAttribute('data-key'));
+    packState[key]=!packState[key]; save(LS.pack,packState); renderPack();
+  });
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=(e)=>{
+    e.stopPropagation();
+    const [cat,label]=b.getAttribute('data-rm').split('|').map(decodeURIComponent);
+    packCustom[cat]=(packCustom[cat]||[]).filter(x=>x!==label); save(LS.packCustom,packCustom);
+    delete packState[packKey(cat,label)]; save(LS.pack,packState); renderPack();
+  });
+  const addFn=(ci)=>{
+    const inp=document.querySelector(`[data-add="${ci}"]`); const v=inp.value.trim(); if(!v) return;
+    const cat=PACK[ci].c; packCustom[cat]=packCustom[cat]||[]; packCustom[cat].push(v); save(LS.packCustom,packCustom); renderPack();
+  };
+  document.querySelectorAll('[data-addbtn]').forEach(b=>b.onclick=()=>addFn(+b.getAttribute('data-addbtn')));
+  document.querySelectorAll('[data-add]').forEach(inp=>inp.onkeydown=(e)=>{if(e.key==='Enter')addFn(+inp.getAttribute('data-add'));});
+}
+
+/* ============================= RENDER: guide ============================= */
+function gline(type,html){
+  const ic={do:'check',dont:'cross',tip:'bulb',gen:'info',euro:'euro'}[type]||'info';
+  const cls={do:'do',dont:'dont',tip:'tip',euro:'gen'}[type]||'gen';
+  return `<div class="gline"><span class="gi ${cls}">${svg(ic)}</span><span>${to12h(html)}</span></div>`;
+}
+function gsec(icon,title,inner,flag){
+  return `<div class="gsec"><div class="gh"><span class="ic">${svg(icon)}</span>
+    <h3>${title}</h3>${flag?`<span class="flag ${flag}" style="margin-left:auto"></span>`:''}</div>${inner}</div>`;
+}
+function country(flag,name,dos,donts,tip){
+  return gsec('flag',name,
+    `<div class="gsub">Do</div>${dos.map(t=>gline('do',t)).join('')}
+     <div class="gsub">Don’t</div>${donts.map(t=>gline('dont',t)).join('')}
+     ${gline('euro',tip)}`, flag);
+}
+/* ---- Getting around (web-verified 2026 transport per base) ---- */
+const GETAROUND=[
+ {loc:'Milan',flag:'it',ic:'train',
+  primary:'Walk the compact centre; take Metro M3 (yellow) the 4 stops Centrale→Duomo (~5 min). Your hotel is NOT walkable to the Duomo (~3.5 km).',
+  modes:[
+   {ic:'walk',m:'Walk',cost:'free',note:'Best for the Duomo–Brera centre (10–15 min between).'},
+   {ic:'train',m:'Metro / tram',cost:'€2.20 · €7.60/day cap',note:'Tap the same contactless card/phone at every gate (tap OUT on the metro too).'},
+   {ic:'car',m:'Taxi / Free Now',cost:'€12–18',note:'Night/rain backup. Licensed taxis are white.'}
+  ],
+  pay:'Just tap a contactless card or phone — it auto-caps at €7.60/day, so no pass needed. Paper tickets ended Jan 2026.',
+  uber:'Uber is premium Black only. Use Free Now or Bolt (they dispatch normal white taxis at the same fare) or just hail one.',
+  verdict:'M3 to the Duomo, then explore on foot; metro/tram down to Navigli. Tap-and-go — don’t buy a pass.'},
+ {loc:'Dolomites',flag:'it',ic:'car',
+  primary:'Your rental car is the backbone — but ride the cable cars to the summits (there’s no road up Seceda, and the Alpe di Siusi road is closed to cars 09:00–17:00).',
+  modes:[
+   {ic:'car',m:'Rental car',cost:'fuel + tolls',note:'Essential for the ~2–2.5h run to Tre Cime and moving between valleys.'},
+   {ic:'cablecar',m:'Seceda cable car',cost:'~€74 pp return',note:'Only practical way up — book a timed slot online (new for 2026).'},
+   {ic:'cablecar',m:'Alpe di Siusi cable car',cost:'~€39 pp return',note:'Ortisei→Mont Seuc. Skip driving (road shut 09:00–17:00 + €30 parking).'},
+   {ic:'car',m:'Tre Cime toll road',cost:'€40 / car',note:'MUST pre-book a plate-linked slot at pass.auronzo.info. Or the Line 444 shuttle, €16 pp.'}
+  ],
+  pay:'Lifts & the Tre Cime toll are bought separately online — NOT covered by the Mobilcard or a hotel Guest Pass. Don’t bother buying a Mobilcard.',
+  uber:'No Uber/Bolt in the mountains; local taxis are pricey (€50–100+). You have the car.',
+  verdict:'Car as base; cable car for Seceda & Alpe di Siusi; pre-book the Tre Cime parking slot before that day.'},
+ {loc:'Venice',flag:'it',ic:'boat',
+  primary:'Walk — it’s car-free and tiny, and San Croce sits right by Piazzale Roma. Use the vaporetto only for the Grand Canal, luggage, or the islands.',
+  modes:[
+   {ic:'walk',m:'Walk',cost:'free',note:'San Croce→Rialto 10–15 min, →San Marco 20–25 min.'},
+   {ic:'boat',m:'Vaporetto (single)',cost:'€9.50 · 75 min',note:'Tap the card/QR at the reader at every boarding.'},
+   {ic:'boat',m:'48h travel pass',cost:'€35 pp',note:'Only worth it if you do the islands or ride 3–4×/day.'},
+   {ic:'boat',m:'Water taxi',cost:'€70–90+',note:'The only on-demand ride — a splurge.'}
+  ],
+  pay:'Load a Venezia Unica card or the AVM app; tap at the reader each time. Passes run on rolling hours from the first tap.',
+  uber:'None at all — no Uber or road taxi in the historic centre (it’s all canals). Only costly water taxis.',
+  verdict:'Walk almost everywhere; buy single €9.50 tickets as needed (e.g. your Grand Canal ride). Skip the multi-day pass.'},
+ {loc:'Zermatt',flag:'ch',ic:'train',
+  primary:'Walk — the village is 100% car-free and ~1.5 km end to end. Free e-bus for tired legs/luggage; the cog railway & cable cars for the mountains.',
+  modes:[
+   {ic:'walk',m:'Walk',cost:'free',note:'~20–25 min across the whole village.'},
+   {ic:'bus',m:'E-bus',cost:'FREE',note:'Red line → Gornergrat/Sunnegga, Green → Glacier Paradise. No ticket.'},
+   {ic:'train',m:'Gornergrat railway',cost:'CHF 132 (66 w/ Half-Fare)',note:'The Matterhorn excursion.'},
+   {ic:'car',m:'E-taxi',cost:'CHF 15–30',note:'Bags or late nights only.'}
+  ],
+  pay:'The e-bus is free. Buy a Swiss Half-Fare Card (CHF 120) — it halves Gornergrat AND your inbound Swiss train, so it usually pays for itself.',
+  uber:'No Uber/Bolt — electric taxis only (combustion cars are banned). You arrive by train anyway.',
+  verdict:'Walk + free e-bus around town; Half-Fare Card for Gornergrat. Pick one big mountain trip for a 2-night stay.'},
+ {loc:'Paris',flag:'fr',ic:'train',
+  primary:'The Metro/RER is the best default — one flat fare covers central Paris, Versailles (RER C) and the La Vallée outlet (RER A), beating Uber on cost and speed.',
+  modes:[
+   {ic:'train',m:'Metro / RER',cost:'€2.50 / journey',note:'Valid 2h, zones 1–5 incl. Versailles & La Vallée. Round trip ~€5.'},
+   {ic:'bus',m:'Bus / tram',cost:'€2.00',note:'Separate fare — a metro ticket doesn’t transfer to the bus.'},
+   {ic:'train',m:'RER B → CDG',cost:'€13',note:'~35 min from Gare du Nord. Cheapest airport run.'},
+   {ic:'car',m:'Taxi → CDG (flat)',cost:'€56 / €65',note:'Fixed fare (Right/Left Bank). Best with luggage for the 11:20am flight.'}
+  ],
+  pay:'Buy ONE Navigo Easy card each (€2) and load €2.50 journeys. (The paper carnet ended in 2025.) A €12.30 day pass only pays off on a very busy day. No universal contactless on the metro yet.',
+  uber:'Uber/Bolt/FreeNow all work, but are slower & pricier than the metro in town, and surge at CDG in the 7–9am peak (your departure) — the flat-fare taxi is safer.',
+  verdict:'Navigo Easy + €2.50 tickets daily (the same fare covers Versailles & the outlet). For 24 Jun CDG: flat-fare taxi door-to-door, or RER B (€13) if you’re fine with stairs — leave by ~7:30am.'}
+];
+function gAround(){
+  const cards=GETAROUND.map(g=>{
+    const modes=g.modes.map(m=>`<div class="ga-mode"><span class="gm-ic">${svg(m.ic)}</span>
+      <span><span class="gm-name">${m.m}</span><span class="gm-note">${to12h(m.note)}</span></span>
+      <span class="gm-cost">${m.cost}</span></div>`).join('');
+    return gsec(g.ic,g.loc,
+      `<div class="ga-primary">${to12h(g.primary)}</div>${modes}
+       <div class="ga-line"><b>Pay:</b> ${to12h(g.pay)}</div>
+       <div class="ga-line"><b>Ride-hailing:</b> ${to12h(g.uber)}</div>
+       <div class="take"><b>My pick:</b> ${to12h(g.verdict)}</div>`, g.flag);
+  }).join('');
+  return `<div class="ga-head">Getting around each base</div>${cards}`;
+}
+function renderGuide(){
+  const entry = gsec('shield','Entry & essentials', [
+    gline('gen','<b>Passport</b> — valid ≥3 months beyond 24 Jun & issued within the last 10 years.'),
+    gline('gen','<b>Visa</b> — none needed. Malaysian passport = visa-free Schengen, up to 90 days.'),
+    gline('gen','<b>ETIAS</b> — not required yet (EU launch expected ~Q4 2026). Nothing to apply for.'),
+    gline('tip','<b>EES is live (since 10 Apr 2026)</b> — expect fingerprint + photo at Milan Malpensa (first entry) and Paris CDG (exit). Queues can be long: reach CDG ~3h before the 11:20 flight.'),
+    gline('gen','<b>Money</b> — Italy & France use the euro; <b>Switzerland uses CHF</b> (Zermatt won’t want euro). Carry some CHF; tell CIMB you’re travelling.'),
+    gline('gen','<b>Plugs</b> — Italy/France Type C/F (Italy also Type L); <b>Switzerland is Type J</b> — a standard EU adapter may not fit Swiss sockets.'),
+    gline('tip','<b>eSIM</b> — buy one that <b>includes Switzerland</b>; many “EU” plans exclude it.'),
+    gline('gen','<b>Driving</b> — carry licence + IDP. Avoid Italian city-centre ZTL zones (Milan/Venice). No Swiss vignette needed (you don’t drive in CH).'),
+    gline('gen','<b>Tap water</b> — safe to drink in all three countries.')
+  ].join(''));
+
+  const italy = country('it','Italy — etiquette',
+    ['Cover shoulders & knees in churches (Duomo, St Mark’s).',
+     'Greet with “Buongiorno” / “Buonasera”.',
+     'Drink espresso standing at the bar — cheaper & local.',
+     'Dinner is late: ~19:30–21:00.'],
+    ['No cappuccino after a meal (it’s a breakfast drink).',
+     'Don’t feed pigeons or picnic on Venice monuments — fines apply.',
+     'Don’t be surprised by a “coperto” (cover charge) at table service.'],
+    'Tipping: usually included (coperto/servizio) — just round up or leave a few euro.');
+
+  const swiss = country('ch','Switzerland — etiquette',
+    ['Be punctual — trains leave to the second.',
+     'Carry some CHF and reserve scenic seats.',
+     'Greet shop staff; keep voices low; recycle.'],
+    ['Don’t expect cheap — it’s pricey (your “cook at the apartment” plan is smart).',
+     'Don’t jaywalk or litter.',
+     'Don’t plan loud nights — Sundays are very quiet.'],
+    'Tipping: not expected — round up for good service. Zermatt is car-free (you arrive by train).');
+
+  const france = country('fr','France — etiquette',
+    ['Always say “Bonjour” before any request — it’s essential politeness.',
+     'A little French goes far: “Merci”, “Parlez-vous anglais ?”.',
+     'Dress neatly; book Louvre & Versailles online in advance.'],
+    ['Don’t skip the greeting — it reads as rude.',
+     'Don’t expect dinner before ~19:30.',
+     'Don’t be loud in restaurants or the metro.'],
+    'Tipping: service is included (“service compris”) — round up / leave small change.');
+
+  const stops = gsec('pin','Tips by stop', [
+    gline('tip','<b>Milan</b> — Use your Duomo combo for the rooftop (dress code applies). Aperitivo in Navigli (~18:00–20:00) fits your evening — a drink comes with free snacks.'),
+    gline('tip','<b>Dolomites</b> — Go early to Seceda for light & fewer crowds; pack layers + a rain shell (June weather flips fast). <b>Alpe di Siusi road is closed to private cars 09:00–17:00</b> — you may need the cable car from Ortisei instead of driving. Start Tre Cime early for a parking spot.'),
+    gline('tip','<b>Venice</b> — You’re <b>exempt from the day-tripper access fee</b> (you stay overnight). Validate vaporetto tickets; a 24/48h pass pays off if you ride a lot. Your early-Rialto + Dorsoduro dining plan beats the tourist traps on San Marco.'),
+    gline('tip','<b>Zermatt</b> — Sit on the <b>right</b> going up Gornergrat for the Matterhorn; go early for the Riffelsee reflection. Check a half-fare/travel pass — Gornergrat is pricey. Clear mornings = best Matterhorn views.'),
+    gline('tip','<b>Paris</b> — Enter the Louvre via Carrousel/Porte des Lions to dodge the pyramid queue; pre-pick what to see. Sainte-Chapelle glows in <b>morning sun</b> (and it’s 10 min from the Louvre). Versailles is closed Mondays — your Tue 23rd works. Mont-St-Michel: long day, comfy shoes, check tides. Mind pickpockets in the metro.')
+  ].join(''));
+
+  const cd=[
+    {when:'Now · ~6 days out',items:[
+      'Decide Sainte-Chapelle <b>today</b>.',
+      'Book Louvre + Versailles timed slots (they sell out).',
+      'Book / decide: Seceda, Alpe di Siusi e-bike & cable car, Gornergrat.',
+      'Buy an eSIM that <b>includes Switzerland</b>.',
+      'Tell CIMB you’re travelling; ready licence + IDP for Enterprise.']},
+    {when:'3–4 days out',items:[
+      'Re-verify Venice→Zermatt & Zermatt→Paris connections on SBB.ch / Trenitalia (transfers are tight).',
+      'Download offline Google Maps: Milan, Dolomites, Venice, Zermatt, Paris.',
+      'Get some EUR <b>and</b> CHF cash.',
+      'Save all confirmations offline (this site helps).']},
+    {when:'2 days out',items:[
+      'Emirates online check-in (opens ~48h before).',
+      'Pack via the Packing tab; check Dolomites/Zermatt weather & adjust layers.',
+      'Charge phone, camera & power bank.']},
+    {when:'Day before · 11 Jun',items:[
+      'Reach KLIA by <b>23:00</b> for the 02:15 flight.',
+      'Final check: passport, IDP, cards, adapters (incl. Swiss Type J).']}
+  ];
+  const countdown = gsec('bulb','Final-week countdown',
+    cd.map(b=>`<div class="gcount-head"><div class="gsub" style="margin-top:14px">${b.when}</div></div>`+
+      b.items.map(i=>gline('tip',i)).join('')).join(''));
+
+  document.getElementById('guide').innerHTML = entry+gAround()+italy+swiss+france+stops+countdown;
+}
+
+/* ============================= VIEWS / NAV ============================= */
+function showView(v){
+  ['itin','budget','pack','weather','guide'].forEach(x=>{
+    document.getElementById('view-'+x).classList.toggle('on',x===v);
+    document.getElementById('tab-'+x).setAttribute('aria-selected',x===v);
+  });
+  document.getElementById('daystrip').style.display = v==='itin'?'block':'none';
+  window.scrollTo({top:0});
+}
+function renderDayStrip(){
+  document.getElementById('daystripScroll').innerHTML = DAYS.map((d,i)=>`
+    <div class="daychip" data-go="${i}"><div class="d">${d.dow}</div><div class="n">${d.date.split(' ')[0]}</div></div>`).join('');
+  document.querySelectorAll('[data-go]').forEach(c=>c.onclick=()=>{
+    const i=+c.getAttribute('data-go');
+    document.getElementById('day-'+i).scrollIntoView({behavior:'smooth',block:'start'});
+  });
+}
+function setStick(){
+  const h=document.querySelector('header.top').offsetHeight;
+  document.documentElement.style.setProperty('--stick',h+'px');
+  const ds=document.querySelector('.daystrip');
+  document.documentElement.style.setProperty('--stick2',(h+(ds?ds.offsetHeight:0))+'px');
+}
+// highlight current day chip on scroll
+let _dayObs=null;
+function spyDays(){
+  if(_dayObs) _dayObs.disconnect();
+  const chips=[...document.querySelectorAll('.daychip')];
+  _dayObs=new IntersectionObserver((es)=>{
+    es.forEach(e=>{ if(e.isIntersecting){ const i=+e.target.id.split('-')[1];
+      chips.forEach((c,ci)=>c.classList.toggle('active',ci===i)); } });
+  },{rootMargin:'-180px 0px -60% 0px',threshold:0});
+  DAYS.forEach((_,i)=>{const el=document.getElementById('day-'+i); if(el) _dayObs.observe(el);});
+}
+
+/* ============================= INIT ============================= */
+renderOverview();
+renderDays();
+renderBudget();
+renderFoodPrices();
+renderPack();
+renderGuide();
+renderWeather();
+renderDayStrip();
+setStick();
+spyDays();
+document.getElementById('resetTimes').onclick=()=>{ if(confirm('Reset all your TIME and DURATION edits back to the original plan?\n\nThis does NOT affect your spending edits or booking ticks. There is no need to “save” — every change is kept automatically on this device.')) resetTimes(); };
+document.getElementById('backupBtn').onclick=exportEdits;
+document.getElementById('restoreBtn').onclick=()=>document.getElementById('restoreFile').click();
+document.getElementById('restoreFile').onchange=e=>importEdits(e.target.files[0]);
+window.addEventListener('resize',setStick);
+</script>
+</body>
+</html>
