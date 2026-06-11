@@ -480,6 +480,16 @@
   .note-banner{background:var(--alert-soft); border:1px solid #eccabf; color:#7c2d1c; border-radius:12px;
     padding:10px 12px; font-size:12.5px; margin-bottom:14px}
   .hint{font-size:11.5px; color:var(--faint); text-align:center; margin:-4px 0 14px}
+  /* ---------- mobile: full-width timeline rows; duration + spend drop to a compact line below ---------- */
+  @media (max-width:560px){
+    .tlhead{display:none}
+    .item{grid-template-columns:26px minmax(0,1fr) auto; column-gap:8px; row-gap:5px}
+    .item>.rail{grid-column:1; grid-row:1 / span 2}
+    .item>.body{grid-column:2 / 4; grid-row:1; min-width:0}
+    .item>.idur{grid-column:2; grid-row:2; justify-self:start; text-align:left; padding-top:0; align-self:center}
+    .item>.idur.ed{align-items:flex-start}
+    .item>.icost{grid-column:3; grid-row:2; justify-self:end; padding-top:0; align-self:center}
+  }
 </style>
 </head>
 <body>
