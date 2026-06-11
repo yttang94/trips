@@ -490,6 +490,26 @@
     .item>.idur.ed{align-items:flex-start}
     .item>.icost{grid-column:3; grid-row:2; justify-self:end; padding-top:0; align-self:center}
   }
+  /* mobile: compact the frozen top chrome (header/tabs/dates/day-header) so more content shows */
+  @media (max-width:560px){
+    header.top{padding-top:calc(env(safe-area-inset-top) + 6px)}
+    .top .wrap{padding-bottom:7px}
+    .brand h1{font-size:15px}
+    .brand .sub{font-size:10.5px}
+    .switch{margin-top:6px; padding:3px}
+    .switch button{font-size:11px; padding:6px 3px}
+    .daystrip .scroll{padding:6px 13px; gap:6px}
+    .daychip{padding:4px 8px; min-width:42px; border-radius:9px}
+    .daychip .d{font-size:9px}
+    .daychip .n{font-size:13px}
+    .day-head{padding:8px 12px}
+    .day-head .dt{font-size:10.5px}
+    .day-head .ttl{font-size:15px; line-height:1.2}
+    .day-head .sm{font-size:11px; margin-top:1px}
+    .day-head .flag{width:15px; height:11px}
+    .flags{gap:2px}
+    .sortbtn{font-size:10.5px; padding:3px 7px}
+  }
 </style>
 </head>
 <body>
@@ -1939,27 +1959,30 @@ window.addEventListener('resize',setStick);
   const connected=()=>!!cfg().tok;
   function appKeys(){const a=[];for(let i=0;i<lc.length;i++){const k=lc.key(i);if(k.startsWith(PREFIX)&&!k.startsWith(PREFIX+'sync.'))a.push(k);}return a;}
   function gather(){const o={};appKeys().forEach(k=>o[k]=lc.getItem(k));return o;}
+  const stable=o=>JSON.stringify(Object.keys(o).sort().reduce((a,k)=>(a[k]=o[k],a),{}));
   function applyData(obj){applying=true;appKeys().forEach(k=>{if(!(k in obj))lc.removeItem(k);});Object.keys(obj).forEach(k=>lc.setItem(k,obj[k]));applying=false;}
   async function api(path,opts){const c=cfg();const r=await fetch('https://api.github.com'+path,Object.assign({headers:{'Authorization':'token '+c.tok,'Accept':'application/vnd.github+json'}},opts||{}));if(!r.ok)throw new Error('GitHub '+r.status+(r.status===401?' — token invalid/expired':r.status===404?' — Gist not found':''));return r.json();}
-  async function pull(){const c=cfg();if(!c.tok||!c.gist)return null;const g=await api('/gists/'+c.gist);const f=g.files&&g.files[NS+'.json'];return f?JSON.parse(f.content):null;}
-  async function push(){const c=cfg();if(!c.tok)return;const blob={ts:Date.now(),data:gather()};const body={files:{[NS+'.json']:{content:JSON.stringify(blob)}}};if(c.gist){await api('/gists/'+c.gist,{method:'PATCH',body:JSON.stringify(body)});}else{body.description='Travel companion sync · '+NS;body.public=false;const g=await api('/gists',{method:'POST',body:JSON.stringify(body)});lc.setItem(CK.gist,g.id);}lc.setItem(CK.ts,String(Date.now()));}
+  async function findGist(){const list=await api('/gists?per_page=100');const m=list.find(g=>g.files&&Object.keys(g.files).includes(NS+'.json'));return m?m.id:'';}
+  async function ensureGist(){let c=cfg();if(c.gist)return c.gist;const found=await findGist();if(found){lc.setItem(CK.gist,found);return found;}return '';}
+  async function pull(){const c=cfg();if(!c.tok)return null;const gid=c.gist||await ensureGist();if(!gid)return null;const g=await api('/gists/'+gid);const f=g.files&&g.files[NS+'.json'];return f?JSON.parse(f.content):null;}
+  async function push(){const c=cfg();if(!c.tok)return;const blob={ts:Date.now(),data:gather()};const body={files:{[NS+'.json']:{content:JSON.stringify(blob)}}};const gid=await ensureGist();if(gid){await api('/gists/'+gid,{method:'PATCH',body:JSON.stringify(body)});}else{body.description='Travel companion sync · '+NS;body.public=false;const g=await api('/gists',{method:'POST',body:JSON.stringify(body)});lc.setItem(CK.gist,g.id);}lc.setItem(CK.ts,String(Date.now()));}
   function badge(t){if(badgeEl)badgeEl.textContent=t;}
   function setStatus(){const ts=+(lc.getItem(CK.ts)||0);badge(connected()?('☁ Synced'+(ts?' · '+new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'')):'');}
   function schedulePush(){if(applying||!connected())return;clearTimeout(pushTimer);badge('☁ saving…');pushTimer=setTimeout(()=>push().then(setStatus).catch(()=>badge('☁ sync error — check token')),2000);}
   const _set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){_set.apply(this,arguments);if(typeof k==='string'&&k.startsWith(PREFIX)&&!k.startsWith(PREFIX+'sync.'))schedulePush();};
+  function busyEditing(){if(document.querySelector('.note-modal'))return true;const ae=document.activeElement;return !!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName));}
+  async function autoPull(force){if(!connected())return;if(!force&&busyEditing())return;try{const d=await pull();if(d&&d.data&&stable(d.data)!==stable(gather())){applyData(d.data);location.reload();}else setStatus();}catch(e){badge('☁ sync error — check token');}}
   const inp=(id,ph,pw)=>`<input id="${id}" ${pw?'type="password"':''} placeholder="${ph}" autocomplete="off" spellcheck="false" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin:4px 0 8px;background:#fff;box-sizing:border-box">`;
   function modal(){
     const c=cfg();const ov=document.createElement('div');ov.className='note-modal';
     ov.innerHTML=`<div class="note-box"><div class="note-h">Cloud sync · GitHub Gist</div>`+
       (connected()
-       ?`<div class="note-hint" style="margin:0 0 8px">Connected — your notes &amp; edits save to a <b>private Gist</b> on every change. On another device, open this page → ☁ Sync → paste the <b>same token + Gist ID</b> → Pull.</div>
-         <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Gist ID: <b>${c.gist?c.gist:'(created on first push)'}</b>${c.gist?` · <a href="https://gist.github.com/${c.gist}" target="_blank" rel="noopener">view</a>`:''}</div>
-         <div class="note-actions"><button class="note-cancel">Close</button><button id="syncPull">⬇ Pull</button><button class="note-save" id="syncPush">⬆ Push now</button></div>
+       ?`<div class="note-hint" style="margin:0 0 8px">Connected — edits auto-save, and your devices auto-refresh. To add a device: open this page there → ☁ Sync → paste the <b>same token</b> (the Gist is found automatically — no ID needed).</div>
+         <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Gist: <b>${c.gist?c.gist.slice(0,10)+'…':'(auto)'}</b>${c.gist?` · <a href="https://gist.github.com/${c.gist}" target="_blank" rel="noopener">view</a>`:''}</div>
+         <div class="note-actions"><button class="note-cancel">Close</button><button id="syncPull">⬇ Pull now</button><button class="note-save" id="syncPush">⬆ Push now</button></div>
          <div style="text-align:right;margin-top:10px"><button id="syncOff" style="border:0;background:transparent;color:var(--alert);font:inherit;font-size:12px;cursor:pointer">Disconnect this device</button></div>`
-       :`<div class="note-hint" style="margin:0 0 8px">Paste a GitHub <b>classic token with the “gist” scope</b> (github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)). It’s stored only in this browser; your data goes to a <b>private</b> Gist.</div>
+       :`<div class="note-hint" style="margin:0 0 8px">Paste a GitHub <b>classic token with the “gist” scope</b>. Stored only in this browser; data goes to a <b>private</b> Gist shared by anyone using the same token. The Gist is found/created automatically.</div>
          ${inp('syncTok','ghp_… (classic token, gist scope)',true)}
-         <div class="note-hint">Existing Gist ID — only to join data from another device (else leave blank):</div>
-         ${inp('syncGid','(blank = create a new private Gist)',false)}
          <div class="note-actions"><button class="note-cancel">Cancel</button><button class="note-save" id="syncGo">Connect</button></div>`)+
       `<div id="syncMsg" style="font-size:12px;color:var(--muted);margin-top:10px;min-height:16px"></div></div>`;
     document.body.appendChild(ov);
@@ -1967,15 +1990,15 @@ window.addEventListener('resize',setStick);
     ov.querySelector('.note-cancel').onclick=close; ov.onmousedown=e=>{if(e.target===ov)close();};
     if(connected()){
       ov.querySelector('#syncPush').onclick=async()=>{msg('Pushing…');try{await push();setStatus();msg('Pushed ✓');}catch(e){msg('⚠ '+e.message);}};
-      ov.querySelector('#syncPull').onclick=async()=>{msg('Pulling…');try{const d=await pull();if(d&&d.data){applyData(d.data);msg('Pulled ✓ — reloading…');setTimeout(()=>location.reload(),500);}else msg('Nothing in the cloud yet — Push first.');}catch(e){msg('⚠ '+e.message);}};
+      ov.querySelector('#syncPull').onclick=async()=>{msg('Pulling…');try{const d=await pull();if(d&&d.data){applyData(d.data);msg('Pulled ✓ — reloading…');setTimeout(()=>location.reload(),400);}else msg('Nothing in the cloud yet — Push first.');}catch(e){msg('⚠ '+e.message);}};
       ov.querySelector('#syncOff').onclick=()=>{if(confirm('Disconnect sync on this device? Your local notes stay; the cloud Gist is untouched.')){lc.removeItem(CK.tok);lc.removeItem(CK.gist);lc.removeItem(CK.ts);close();setStatus();}};
     }else{
-      ov.querySelector('#syncGo').onclick=async()=>{const tok=ov.querySelector('#syncTok').value.trim(),gid=ov.querySelector('#syncGid').value.trim();
-        if(!tok){msg('Paste a token first.');return;} lc.setItem(CK.tok,tok); if(gid)lc.setItem(CK.gist,gid); msg('Connecting…');
+      ov.querySelector('#syncGo').onclick=async()=>{const tok=ov.querySelector('#syncTok').value.trim();
+        if(!tok){msg('Paste a token first.');return;} lc.setItem(CK.tok,tok); msg('Connecting…');
         try{await api('/gists?per_page=1');const remote=await pull();
-          if(remote&&remote.data){applyData(remote.data);msg('Connected ✓ — pulled your data, reloading…');setTimeout(()=>location.reload(),700);}
-          else{await push();setStatus();msg('Connected ✓ — created a private Gist. Save its ID for your other devices.');setTimeout(()=>{close();modal();},800);}
-        }catch(e){lc.removeItem(CK.tok);if(!gid)lc.removeItem(CK.gist);msg('⚠ '+e.message);}};
+          if(remote&&remote.data){applyData(remote.data);msg('Connected ✓ — found your data, reloading…');setTimeout(()=>location.reload(),600);}
+          else{await push();setStatus();msg('Connected ✓ — synced to your Gist.');setTimeout(()=>{close();modal();},700);}
+        }catch(e){lc.removeItem(CK.tok);lc.removeItem(CK.gist);msg('⚠ '+e.message);}};
     }
   }
   function mount(){
@@ -1986,15 +2009,10 @@ window.addEventListener('resize',setStick);
       badgeEl=document.createElement('span');badgeEl.id='syncBadge';badgeEl.style.cssText='display:block;font-size:11px;color:var(--muted);margin-top:6px;text-align:center';
       anchor.parentNode.appendChild(badgeEl);
     }
-    setStatus();
-    if(connected()&&!sessionStorage.getItem(PREFIX+'syncpulled')){
-      badge('☁ syncing…');
-      pull().then(d=>{ sessionStorage.setItem(PREFIX+'syncpulled','1');
-        if(d&&d.data&&JSON.stringify(d.data)!==JSON.stringify(gather())){applyData(d.data);location.reload();}
-        else setStatus();
-      }).catch(()=>badge('☁ sync error — check token'));
-    }
+    setStatus(); if(connected()) autoPull(true);
   }
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')autoPull(false);});
+  setInterval(()=>{if(document.visibilityState==='visible')autoPull(false);},45000);
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
 })();
 </script>
