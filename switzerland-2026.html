@@ -724,25 +724,28 @@ const DAYS = [
   ],
   stay:{nm:'Arca Aparthotel & Spa',book:{id:'b-acc-zer',s:true},nt:'Night 2 of 2 · check out tomorrow',rm:null,place:'Arca Aparthotel Spa Zermatt'}},
 
- {date:'20 Jun',dow:'Fri',title:'Zermatt → Montreux → fly home',cc:['ch','ae'],sub:'Chillon Castle, then night flight from Geneva',
+ {date:'20 Jun',dow:'Fri',title:'Zermatt → Montreux + Chillon',cc:['ch'],sub:'Scenic rail to Lake Geneva · overnight Montreux',
   items:[
-    {k:'logistics',t:'08:00',title:'Check out · depart Zermatt'},
-    {k:'transit',t:'08:30',title:'Zermatt → Visp → Lausanne → Montreux',mode:'train',travel:'~3h 15m',detail:'Scenic rail; Lake Geneva opens up after Lausanne. FREE with Day Saver Duo.',book:{id:'tk-dsd3',s:false,L:'Day Saver Duo'},place:'Montreux'},
-    {k:'activity',t:'12:00',title:'Montreux lakeside',dur:'~1.5h',detail:'Promenade · Freddie Mercury statue · Lake Geneva views. Drop bags in a station locker.',place:'Montreux'},
-    {k:'meal',t:'13:30',title:'Lunch in Montreux',dur:'~1h'},
-    {k:'transit',t:'14:30',title:'Montreux → Château de Chillon',mode:'bus',travel:'10 min',detail:'Or a 45-min lakeside walk.',place:'Château de Chillon'},
+    {k:'logistics',t:'08:30',title:'Check out · depart Zermatt'},
+    {k:'transit',t:'09:00',title:'Zermatt → Visp → Lausanne → Montreux',mode:'train',travel:'~3h 15m',detail:'Scenic rail; Lake Geneva opens up after Lausanne. FREE with Day Saver Duo.',book:{id:'tk-dsd3',s:false,L:'Day Saver Duo'},place:'Montreux'},
+    {k:'activity',t:'12:30',title:'Check in · The Freddie Mercury Hotel',detail:'Steps from the lakeside promenade.',place:'Montreux'},
+    {k:'meal',t:'13:30',title:'Lunch in Montreux',dur:'~1h',detail:'Lakeside — try filets de perche (lake fish).'},
+    {k:'transit',t:'14:30',title:'Montreux → Château de Chillon',mode:'bus',travel:'10 min',detail:'Bus 201, or a 45-min lakeside walk.',place:'Château de Chillon'},
     {k:'activity',t:'14:45',title:'Château de Chillon',dur:'~1.5h',detail:'Medieval lakeside castle (CHF15pp).',book:{id:'tk-chillon',s:false,L:'CHF15pp'},place:'Château de Chillon'},
-    {k:'transit',t:'17:00',title:'Montreux → Geneva Airport',mode:'train',travel:'~1h 10m',detail:'Arrive GVA ~18:15 — check in for the 21:15 flight (be there ~3h before).',place:'Geneva Airport'},
-    {k:'transit',t:'21:15',title:'Geneva → Abu Dhabi',mode:'plane',travel:'6h 45m',detail:'Etihad EY148 · arrive Zayed Intl (AUH) 06:00 (+1).',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY148'},place:'Geneva Airport'}
+    {k:'activity',t:'17:00',title:'Montreux lakeside · Freddie Mercury statue',dur:'~1.5h',detail:'Promenade & Lake Geneva — your final Swiss sunset.',place:'Montreux'},
+    {k:'meal',t:'19:30',title:'Dinner in Montreux',dur:'~1.5h'}
   ],
-  stay:{free:'Overnight flight (Geneva → Abu Dhabi)'}},
+  stay:{nm:'The Freddie Mercury Hotel',book:{id:'b-acc-mon',s:false},nt:'Montreux · lakeside · 1 night (20–21 Jun)',rm:666.33,night:666.33,place:'Montreux'}},
 
- {date:'21 Jun',dow:'Sat',title:'Abu Dhabi → Kuala Lumpur',cc:['ae','my'],sub:'Home',
+ {date:'21 Jun',dow:'Sat',title:'Montreux → Geneva → fly home',cc:['ch','ae','my'],sub:'Etihad via Abu Dhabi · home 22 Jun',
   items:[
-    {k:'buffer',t:'06:00',title:'Connect at Abu Dhabi (AUH)',dur:'~2h 35m',detail:'Terminal A.'},
-    {k:'transit',t:'08:35',title:'Abu Dhabi → Kuala Lumpur',mode:'plane',travel:'7h 15m',detail:'Etihad EY486 · arrive KLIA T1 19:50 — HOME.',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY486'},place:'Kuala Lumpur International Airport'}
+    {k:'meal',t:'05:30',title:'Early breakfast / grab-and-go'},
+    {k:'transit',t:'06:50',title:'Montreux → Geneva Airport',mode:'train',travel:'~1h 10m',detail:'Direct; arrive GVA ~08:05 — be there ~3h before the flight.',place:'Geneva Airport'},
+    {k:'transit',t:'10:45',title:'Geneva → Abu Dhabi',mode:'plane',travel:'6h 15m',detail:'Etihad EY146 · arrive Zayed Intl (AUH) Terminal A 19:00.',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY146'},place:'Geneva Airport'},
+    {k:'buffer',t:'19:00',title:'Connect at Abu Dhabi (AUH)',dur:'~2h',detail:'Terminal A.'},
+    {k:'transit',t:'21:00',title:'Abu Dhabi → Kuala Lumpur',mode:'plane',travel:'7h 25m',detail:'Etihad EY488 · arrive KLIA T1 22 Jun 08:25 — HOME.',book:{id:'b-fl',s:true,lock:true,L:'Etihad EY488'},place:'Kuala Lumpur International Airport'}
   ],
-  stay:{free:'Home'}}
+  stay:{free:'Overnight flight (home 22 Jun 08:25)'}}
 ];
 
 const LEGS=[
@@ -764,7 +767,7 @@ const BUDGET=[
   {cat:'Stays',date:'14–15 Jun',n:'Grindelwald · Sunstar Hotel & Spa (1 night)',rm:2109,id:'b-acc-gri',paid:true},
   {cat:'Stays',date:'15–18 Jun',n:'Interlaken (3 nights) — confirm hotel',rm:3695,id:'b-acc-int',paid:false},
   {cat:'Stays',date:'18–20 Jun',n:'Zermatt · Arca Aparthotel & Spa (2 nights)',rm:1912.75,id:'b-acc-zer',paid:true},
-  {cat:'Stays',date:'20–21 Jun',n:'Montreux · Freddie Mercury Hotel ⚠ conflicts with 20 Jun night flight — confirm/cancel',rm:666.33,id:'b-acc-mon',paid:false,est:true},
+  {cat:'Stays',date:'20–21 Jun',n:'Montreux · Freddie Mercury Hotel (1 night)',rm:666.33,id:'b-acc-mon',paid:false},
   {cat:'Transport',date:'12 Jun',n:'Half Fare Card (2 pax · 1 month)',chf:274,rm:1465.9,id:'b-tr-hfc',paid:false,est:true},
   {cat:'Transport',date:'Days 2,4,9',n:'Day Saver Duo ×3 (Stoos/Rigi · Lungern · Montreux)',chf:267,rm:1428.45,id:'b-tr-dsd',paid:false,est:true},
   {cat:'Tickets',date:'12 Jun',n:'Mt Pilatus Golden Round Trip (HFC · 2 pax)',chf:94,rm:502.9,id:'b-tk-pilatus',paid:false,est:true,itin:'Alpnachstad → Pilatus Kulm (cogwheel)'},
@@ -782,7 +785,7 @@ const PACK=[
  {c:'Documents & money',items:[
    {l:'Passport',s:'+ photocopies / digital copies'},
    {l:'Travel insurance docs'},
-   {l:'Etihad confirmations',s:' (EY487/143 out · EY148/486 home)'},
+   {l:'Etihad confirmations',s:'EY487/143 out · EY146/488 home'},
    {l:'Hotel & Airbnb confirmations',s:'Monopol · Sunstar · Interlaken · Arca'},
    {l:'Swiss rail pass / tickets',s:'Half-Fare Card + Day Saver Duo (Days 2, 4, 9)'},
    {l:'Bank cards + cash',s:'Switzerland uses CHF — carry some francs'}
@@ -853,7 +856,7 @@ const OPENINFO = {
  'Mürren + Allmendhubel':{h:'Schilthornbahn ~ every 30 min · Allmendhubel last down 17:20',c:'⚠ The Lauterbrunnen–Grütschalp cable car is CLOSED 13 Apr–10 Jul 2026 — reach Mürren via PostBus 141 → Stechelberg → Schilthornbahn. Leave Allmendhubel by ~16:45 to catch the last funicular down.'},
  'Lunch · Riffelhaus 1853':{h:'Open year-round',c:'The Riffelberg Buffet & Bar is CLOSED in June — Riffelhaus 1853 (3 min from the station) is the reliable option. Book ahead: +41 27 966 65 00.'},
  'Zermatt → Gornergrat (cogwheel)':{h:'First train 07:00 · every 24 min · last down ~20:00',c:'Take the 07:00 first train for the clearest Matterhorn light and the calmest Riffelsee.'},
- 'Château de Chillon':{h:'June daily ~09:00–19:00 (last entry 18:00)',c:'CHF15pp, no pass discount. Bus 201 from Montreux (~10 min) or a 45-min lakeside walk. Leave time to reach Geneva Airport for the 21:15 flight.'}
+ 'Château de Chillon':{h:'June daily ~09:00–19:00 (last entry 18:00)',c:'CHF15pp, no pass discount. Bus 201 from Montreux (~10 min) or a 45-min lakeside walk. Do it on the 20th — your Geneva flight is the next morning.'}
 };
 /* Itinerary Spend amounts now come from the shared BUDGET (via COSTBYITIN) so edits sync both ways. */
 /* ---- Weather & what to wear per base (web-researched, mid-to-late June) ---- */
@@ -901,7 +904,7 @@ const WEATHERPLAN = [
   acc:['Warm down/fleece','Windproof shell','Beanie + gloves','Strong-UV sunglasses','High SPF + lip balm','Swimwear (lakes + spa)','Daypack']},
  {loc:'Montreux / Lake Geneva',flag:'ch',days:'20 Jun',temp:'~14–24°C · the warmest day',
   cond:'Mostly sunny Riviera microclimate.',
-  clothes:'T-shirt + shorts/dress; a light layer for the evening before the 21:15 Geneva flight.',
+  clothes:'T-shirt + shorts/dress; a light layer for the lakeside evening.',
   shoes:'Comfy walking shoes (Chillon + lakeside).',
   acc:['Light layer','Sunglasses + SPF','Water bottle']}
 ];
@@ -930,7 +933,7 @@ function renderWeather(){
 }
 
 /* ============================= STATE ============================= */
-const LS={book:'eu26.book', paid:'eu26.paid', pack:'eu26.pack', packCustom:'eu26.packCustom'};
+const LS={book:'chja26.book', paid:'chja26.paid', pack:'chja26.pack', packCustom:'chja26.packCustom'};
 const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}};
 const save=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 
@@ -951,16 +954,16 @@ const ID_RENAMES = [
   // ['old-id','new-id'],  // if a budget/booking line id ever changes, carry over the edited amount + paid/booked state
 ];
 (function migrateSavedEdits(){
-  ['eu26.times','eu26.durmin','eu26.posnat','eu26.poscur','eu26.notes'].forEach(name=>{
+  ['chja26.times','chja26.durmin','chja26.posnat','chja26.poscur','chja26.notes'].forEach(name=>{
     const o=load(name,{}); let dirty=false;
     KEY_RENAMES.forEach(([di,a,b])=>{ const ok=di+'|'+a, nk=di+'|'+b;
       if(ok in o && !(nk in o)){ o[nk]=o[ok]; delete o[ok]; dirty=true; } });
     if(dirty) save(name,o);
   });
-  const ord=load('eu26.order',{}); let od=false;
+  const ord=load('chja26.order',{}); let od=false;
   KEY_RENAMES.forEach(([di,a,b])=>{ const arr=ord[di]; if(Array.isArray(arr)){ const i=arr.indexOf(a); if(i>=0){ arr[i]=b; od=true; } } });
-  if(od) save('eu26.order',ord);
-  ['eu26.costnat','eu26.paid','eu26.book'].forEach(name=>{
+  if(od) save('chja26.order',ord);
+  ['chja26.costnat','chja26.paid','chja26.book'].forEach(name=>{
     const o=load(name,{}); let dirty=false;
     ID_RENAMES.forEach(([a,b])=>{ if(a in o && !(b in o)){ o[b]=o[a]; delete o[a]; dirty=true; } });
     if(dirty) save(name,o);
@@ -971,8 +974,8 @@ let bookState=load(LS.book,{});      // id -> true|false|'deciding'
 let paidState=load(LS.paid,{});      // id -> true|false
 let packState=load(LS.pack,{});      // key -> true
 let packCustom=load(LS.packCustom,{});// cat -> [labels]
-let timeOv=load('eu26.times',{}); // 'di-ii' -> 'HH:MM' user overrides (cascade downstream)
-let durOv=load('eu26.durmin',{}); // 'di-ii' -> minutes override (changing a duration pushes later start times)
+let timeOv=load('chja26.times',{}); // 'di-ii' -> 'HH:MM' user overrides (cascade downstream)
+let durOv=load('chja26.durmin',{}); // 'di-ii' -> minutes override (changing a duration pushes later start times)
 function parseDurMin(s){ if(!s) return null; const t=String(s).toLowerCase();
   if(/half\s*day/.test(t)) return 240; if(/full\s*day|whole\s*day/.test(t)) return 480;
   if(/evening/.test(t)) return 180; if(/flex/.test(t)) return 90;
@@ -987,7 +990,7 @@ function onDurEdit(di,ii,val){ const newMin=parseInt(val); if(isNaN(newMin)) ret
   durOv[ik(di,ii)]=newMin;
   const delta=newMin-(old==null?newMin:old);
   if(delta){ const _o=orderedIdx(di), _ps=_o.indexOf(ii); for(let _p=_ps+1;_p<_o.length;_p++){const j=_o[_p], itj=day.items[j]; if(isFixed(itj)) break; if(isClock(itj.t)) timeOv[ik(di,j)]=fromMin(toMin(effTime(di,j,itj.t))+delta);} }
-  save('eu26.durmin',durOv); save('eu26.times',timeOv); renderDays();
+  save('chja26.durmin',durOv); save('chja26.times',timeOv); renderDays();
 }
 const isClock=t=>typeof t==='string'&&/^\d{1,2}:\d{2}$/.test(t);
 const pad2=t=>{const a=t.split(':'); return (a[0].length<2?'0'+a[0]:a[0])+':'+a[1];};
@@ -1000,11 +1003,11 @@ function onTimeEdit(di,ii,val){
   const delta=toMin(val)-toMin(oldEff);
   timeOv[ik(di,ii)]=pad2(val);
   if(delta){ const _o=orderedIdx(di), _ps=_o.indexOf(ii); for(let _p=_ps+1;_p<_o.length;_p++){const j=_o[_p], itj=day.items[j]; if(isFixed(itj)) break; if(isClock(itj.t)) timeOv[ik(di,j)]=fromMin(toMin(effTime(di,j,itj.t))+delta);} }
-  save('eu26.times',timeOv); renderDays();
+  save('chja26.times',timeOv); renderDays();
 }
-function resetTimes(){timeOv={}; durOv={}; save('eu26.times',timeOv); save('eu26.durmin',durOv); renderDays();}
-function exportEdits(){ const o={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.indexOf('eu26.')===0) o[k]=localStorage.getItem(k);} const blob=new Blob([JSON.stringify(o,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='europe-trip-edits.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
-function importEdits(file){ if(!file) return; const r=new FileReader(); r.onload=()=>{ try{ const o=JSON.parse(r.result); let n=0; Object.keys(o).forEach(k=>{ if(k.indexOf('eu26.')===0){ localStorage.setItem(k,o[k]); n++; } }); alert('Restored '+n+' saved settings. Reloading…'); location.reload(); }catch(e){ alert('Sorry — that file could not be read as a backup.'); } }; r.readAsText(file); }
+function resetTimes(){timeOv={}; durOv={}; save('chja26.times',timeOv); save('chja26.durmin',durOv); renderDays();}
+function exportEdits(){ const o={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i); if(k&&k.indexOf('chja26.')===0) o[k]=localStorage.getItem(k);} const blob=new Blob([JSON.stringify(o,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='europe-trip-edits.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+function importEdits(file){ if(!file) return; const r=new FileReader(); r.onload=()=>{ try{ const o=JSON.parse(r.result); let n=0; Object.keys(o).forEach(k=>{ if(k.indexOf('chja26.')===0){ localStorage.setItem(k,o[k]); n++; } }); alert('Restored '+n+' saved settings. Reloading…'); location.reload(); }catch(e){ alert('Sorry — that file could not be read as a backup.'); } }; r.readAsText(file); }
 
 function bookOf(b){ return (b.id in bookState)?bookState[b.id]:b.s; }
 function paidOf(it){ return (it.id in paidState)?paidState[it.id]:it.paid; }
@@ -1020,18 +1023,18 @@ function dayCur(d){ const cc=(d&&d.cc)||[]; return curForCC(cc[cc.length-1]||'it
 const MEALEST={ EUR:{breakfast:8,lunch:18,dinner:35,gelato:5,snack:6,default:15}, CHF:{breakfast:12,lunch:30,dinner:55,gelato:6,snack:9,default:25}, MYR:{breakfast:20,lunch:40,dinner:70,gelato:15,snack:15,default:35} };
 function mealType(t){ t=String(t).toLowerCase(); if(t.includes('breakfast')||t.includes('brunch'))return'breakfast'; if(t.includes('lunch'))return'lunch'; if(t.includes('dinner'))return'dinner'; if(t.includes('gelato')||t.includes('dessert'))return'gelato'; if(t.includes('coffee')||t.includes('spritz')||t.includes('aperitivo')||t.includes('caffè')||t.includes('drinks'))return'snack'; return'default'; }
 function mealEst(di,ii){ const it=DAYS[di]&&DAYS[di].items[ii]; if(!it||it.k!=='meal') return null; const tbl=MEALEST[dayCur(DAYS[di])]||MEALEST.EUR; const v=tbl[mealType(it.title)]; return v!=null?v:tbl.default; }
-let costOv=load('eu26.costnat',{}); // id -> native-amount override (predefined lines)
-let posCost=load('eu26.posnat',{}); // 'di-ii' -> native amount (user-added rows)
-let posCur=load('eu26.poscur',{}); // 'di-ii' -> currency (defaults to the day's currency)
+let costOv=load('chja26.costnat',{}); // id -> native-amount override (predefined lines)
+let posCost=load('chja26.posnat',{}); // 'di-ii' -> native amount (user-added rows)
+let posCur=load('chja26.poscur',{}); // 'di-ii' -> currency (defaults to the day's currency)
 const effNat=e=>{ if(!e) return 0; if(e.pos) return (posCost[e.k]!=null)?+posCost[e.k]:(e.def!=null?+e.def:0); return (e.id in costOv)?+costOv[e.id]:natBase(e); };
 const effRm=e=>{ if(!e) return 0; return e.pos ? effNat(e)*(RATE[e.cur]||1) : effNat(e)*rateOf(e); };
-function setCost(id,val){const v=parseFloat(val); if(isNaN(v)||v<0) return; costOv[id]=Math.round(v*100)/100; save('eu26.costnat',costOv); renderDays(); renderBudget();}
-function setPosCostKey(k,val){ if(val===''||val==null){ delete posCost[k]; delete posCur[k]; } else { const v=parseFloat(val); if(isNaN(v)||v<0) return; posCost[k]=Math.round(v*100)/100; if(!(k in posCur)) posCur[k]=dayCur(DAYS[+k.slice(0,k.indexOf('|'))]); } save('eu26.posnat',posCost); save('eu26.poscur',posCur); renderDays(); renderBudget(); }
+function setCost(id,val){const v=parseFloat(val); if(isNaN(v)||v<0) return; costOv[id]=Math.round(v*100)/100; save('chja26.costnat',costOv); renderDays(); renderBudget();}
+function setPosCostKey(k,val){ if(val===''||val==null){ delete posCost[k]; delete posCur[k]; } else { const v=parseFloat(val); if(isNaN(v)||v<0) return; posCost[k]=Math.round(v*100)/100; if(!(k in posCur)) posCur[k]=dayCur(DAYS[+k.slice(0,k.indexOf('|'))]); } save('chja26.posnat',posCost); save('chja26.poscur',posCur); renderDays(); renderBudget(); }
 function setPosCost(di,ii,val){ setPosCostKey(ik(di,ii),val); }
-let noteOv=load('eu26.notes',{}); // 'di-ii' -> free-text note for that row
+let noteOv=load('chja26.notes',{}); // 'di-ii' -> free-text note for that row
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function editNote(di,ii){ const k=ik(di,ii);
-  openNoteModal(noteOv[k]||'', val=>{ const t=val.replace(/[ \t]+\n/g,'\n').replace(/\s+$/,''); if(t) noteOv[k]=t; else delete noteOv[k]; save('eu26.notes',noteOv); renderDays(); });
+  openNoteModal(noteOv[k]||'', val=>{ const t=val.replace(/[ \t]+\n/g,'\n').replace(/\s+$/,''); if(t) noteOv[k]=t; else delete noteOv[k]; save('chja26.notes',noteOv); renderDays(); });
 }
 function openNoteModal(initial,onSave){
   const ov=document.createElement('div'); ov.className='note-modal';
@@ -1044,7 +1047,7 @@ function openNoteModal(initial,onSave){
   ov.onmousedown=e=>{ if(e.target===ov) close(); };
   ta.onkeydown=e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){ e.preventDefault(); submit(); } else if(e.key==='Escape'){ e.preventDefault(); close(); } };
 }
-let orderOv=load('eu26.order',{}); // di -> [title,...] custom row order (lets you move rows up/down)
+let orderOv=load('chja26.order',{}); // di -> [title,...] custom row order (lets you move rows up/down)
 function orderedIdx(di){ const items=DAYS[di].items, saved=orderOv[di]; if(!saved||!saved.length) return items.map((_,i)=>i);
   const byT={}; items.forEach((it,i)=>{ if(!(it.title in byT)) byT[it.title]=i; }); const out=[],used=new Set();
   saved.forEach(t=>{ if(t in byT && !used.has(byT[t])){ out.push(byT[t]); used.add(byT[t]); } }); items.forEach((_,i)=>{ if(!used.has(i)) out.push(i); }); return out; }
@@ -1059,9 +1062,9 @@ function reflowFrom(di,startPos){ const order=orderedIdx(di), items=DAYS[di].ite
     if(!isClock(t)) continue;
     if(cursor==null){ cursor=toMin(t)+dmin(di,j); continue; }
     const start=cursor+hopMin(it); timeOv[ik(di,j)]=fromMin(start); cursor=start+dmin(di,j); }
-  save('eu26.times',timeOv); }
+  save('chja26.times',timeOv); }
 function moveItem(di,ii,dir){ const order=orderedIdx(di), pos=order.indexOf(ii), np=pos+dir; if(np<0||np>=order.length) return;
-  const a=order[pos]; order[pos]=order[np]; order[np]=a; orderOv[di]=order.map(i=>DAYS[di].items[i].title); save('eu26.order',orderOv);
+  const a=order[pos]; order[pos]=order[np]; order[np]=a; orderOv[di]=order.map(i=>DAYS[di].items[i].title); save('chja26.order',orderOv);
   reflowFrom(di,np); renderDays(); }
 function sortDay(di){ const items=DAYS[di].items;
   // 1) order rows by their current time (untimed rows stay attached to the stop above them)
@@ -1074,7 +1077,7 @@ function sortDay(di){ const items=DAYS[di].items;
     if(!isClock(t)) continue;
     let start=toMin(t); if(cursor!=null){ const mn=cursor+hopMin(it); if(start<mn) start=mn; }
     timeOv[ik(di,j)]=fromMin(start); cursor=start+dmin(di,j); }
-  save('eu26.order',orderOv); save('eu26.times',timeOv); renderDays(); }
+  save('chja26.order',orderOv); save('chja26.times',timeOv); renderDays(); }
 function isFixed(it){ return !!it.lock || !!(it.book && bookOf(it.book)===true); } // it.lock = confirmed ticket on file (permanently locked); else ANY booking marked done = fixed start time
 // Budget rows generated from the itinerary: every meal (pre-filled estimate) + any per-row cost you add. Skips items already in BUDGET to avoid double-counting.
 /* Per-day base location — labels each budget row with where you'll be. An item's own
@@ -1396,7 +1399,7 @@ function renderFoodPrices(){
     `<div class="fpcard">${rows}<div class="fpd fpd-total"><div class="fpd-main"><span class="fpd-place">Whole-trip food</span><span class="fpd-date">eating out, per person</span></div><div class="fpd-cost">≈ RM ${fmt(Math.round(tLo))}–${fmt(Math.round(tHi))}<small>2 pax ≈ RM ${fmt(Math.round(tLo*2))}–${fmt(Math.round(tHi*2))}</small></div></div></div>`+
     `<details class="alt" style="margin-top:14px"><summary>Price guide — what individual items cost per city</summary>${guide}</details>`;
 }
-function setBookingTime(di,ii,val){ if(!isClock(val)) return; timeOv[ik(di,ii)]=pad2(val); save('eu26.times',timeOv); renderDays(); renderBudget(); } // edit a booking time from the Budget → updates the itinerary
+function setBookingTime(di,ii,val){ if(!isClock(val)) return; timeOv[ik(di,ii)]=pad2(val); save('chja26.times',timeOv); renderDays(); renderBudget(); } // edit a booking time from the Budget → updates the itinerary
 function renderBudget(){
   let total=0,paid=0,topay=0;
   const allRows=BUDGET.concat(autoEntries());
@@ -1551,7 +1554,7 @@ const GETAROUND=[
    {ic:'walk',m:'Walk',cost:'free',note:'Promenade, Freddie Mercury statue, → Chillon (45 min lakeside).'},
    {ic:'bus',m:'Bus 201 → Chillon',cost:'~CHF 3',note:'~10 min from Montreux centre.'},
    {ic:'train',m:'Montreux → Geneva Airport',cost:'free w/ DSP',note:'~1h 10m direct; FREE on a Day Saver Duo.'},
-   {ic:'train',m:'Geneva Airport (GVA)',cost:'—',note:'Be there ~3h before the 21:15 EY148. Station is under the terminal.'}
+   {ic:'train',m:'Geneva Airport (GVA)',cost:'—',note:'~06:50 train from Montreux arrives ~08:05; be there ~3h before the 10:45 EY146. Station is under the terminal.'}
   ],
   pay:'A Day Saver Duo covers the Zermatt→Montreux→Geneva travel day. Store bags in a Montreux station locker while you do Chillon.',
   uber:'Uber works in Geneva, but the train runs right into the airport — no need.',
@@ -1598,7 +1601,7 @@ function renderGuide(){
     gline('tip','<b>Grindelwald / First</b> — Ride the activities in order: <b>Cliff Walk → Glider → gondola back up → Mountain Cart → Trottibike</b>, or you waste gondola rides. Brake gently on the Trottibike’s steep sections.'),
     gline('tip','<b>Lauterbrunnen</b> — ⚠ The <b>Grütschalp cable car is closed</b> (13 Apr–10 Jul): reach Mürren via PostBus 141 → Stechelberg → Schilthornbahn. Leave Allmendhubel by ~16:45 for the last funicular down.'),
     gline('tip','<b>Zermatt</b> — Take the <b>07:00 Gornergrat first train</b>, sit RIGHT for the Matterhorn; the Riffelsee mirror is calmest before 09:00. Pack swimwear for the 5-Seenweg (Grünsee & Leisee). Riffelberg buffet is closed in June — lunch at Riffelhaus 1853.'),
-    gline('tip','<b>Montreux → Geneva</b> — ⚠ Your <b>flight leaves Geneva 20 Jun 21:15</b>, so this is a day visit, not an overnight. Do Chillon, then leave Montreux by ~17:00 to reach GVA ~3h before the flight. Reconcile the Montreux hotel booking.')
+    gline('tip','<b>Montreux → Geneva</b> — Overnight at the lakeside, then an <b>early start</b>: the ~06:50 train reaches Geneva Airport by ~08:05 for the <b>10:45 EY146</b>. Store bags while you do Chillon on the 20th; try filets de perche by the lake.')
   ].join(''));
 
   const cd=[
@@ -1675,6 +1678,73 @@ document.getElementById('backupBtn').onclick=exportEdits;
 document.getElementById('restoreBtn').onclick=()=>document.getElementById('restoreFile').click();
 document.getElementById('restoreFile').onchange=e=>importEdits(e.target.files[0]);
 window.addEventListener('resize',setStick);
+/* ===================== CLOUD SYNC (GitHub Gist) ===================== */
+(function(){
+  const PREFIX='chja26.', NS='switzerland';
+  const CK={tok:PREFIX+'sync.token',gist:PREFIX+'sync.gist',ts:PREFIX+'sync.ts'};
+  const lc=localStorage; let applying=false,pushTimer=null,badgeEl;
+  const cfg=()=>({tok:lc.getItem(CK.tok)||'',gist:lc.getItem(CK.gist)||''});
+  const connected=()=>!!cfg().tok;
+  function appKeys(){const a=[];for(let i=0;i<lc.length;i++){const k=lc.key(i);if(k.startsWith(PREFIX)&&!k.startsWith(PREFIX+'sync.'))a.push(k);}return a;}
+  function gather(){const o={};appKeys().forEach(k=>o[k]=lc.getItem(k));return o;}
+  function applyData(obj){applying=true;appKeys().forEach(k=>{if(!(k in obj))lc.removeItem(k);});Object.keys(obj).forEach(k=>lc.setItem(k,obj[k]));applying=false;}
+  async function api(path,opts){const c=cfg();const r=await fetch('https://api.github.com'+path,Object.assign({headers:{'Authorization':'token '+c.tok,'Accept':'application/vnd.github+json'}},opts||{}));if(!r.ok)throw new Error('GitHub '+r.status+(r.status===401?' — token invalid/expired':r.status===404?' — Gist not found':''));return r.json();}
+  async function pull(){const c=cfg();if(!c.tok||!c.gist)return null;const g=await api('/gists/'+c.gist);const f=g.files&&g.files[NS+'.json'];return f?JSON.parse(f.content):null;}
+  async function push(){const c=cfg();if(!c.tok)return;const blob={ts:Date.now(),data:gather()};const body={files:{[NS+'.json']:{content:JSON.stringify(blob)}}};if(c.gist){await api('/gists/'+c.gist,{method:'PATCH',body:JSON.stringify(body)});}else{body.description='Travel companion sync · '+NS;body.public=false;const g=await api('/gists',{method:'POST',body:JSON.stringify(body)});lc.setItem(CK.gist,g.id);}lc.setItem(CK.ts,String(Date.now()));}
+  function badge(t){if(badgeEl)badgeEl.textContent=t;}
+  function setStatus(){const ts=+(lc.getItem(CK.ts)||0);badge(connected()?('☁ Synced'+(ts?' · '+new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'')):'');}
+  function schedulePush(){if(applying||!connected())return;clearTimeout(pushTimer);badge('☁ saving…');pushTimer=setTimeout(()=>push().then(setStatus).catch(()=>badge('☁ sync error — check token')),2000);}
+  const _set=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){_set.apply(this,arguments);if(typeof k==='string'&&k.startsWith(PREFIX)&&!k.startsWith(PREFIX+'sync.'))schedulePush();};
+  const inp=(id,ph,pw)=>`<input id="${id}" ${pw?'type="password"':''} placeholder="${ph}" autocomplete="off" spellcheck="false" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin:4px 0 8px;background:#fff;box-sizing:border-box">`;
+  function modal(){
+    const c=cfg();const ov=document.createElement('div');ov.className='note-modal';
+    ov.innerHTML=`<div class="note-box"><div class="note-h">Cloud sync · GitHub Gist</div>`+
+      (connected()
+       ?`<div class="note-hint" style="margin:0 0 8px">Connected — your notes &amp; edits save to a <b>private Gist</b> on every change. On another device, open this page → ☁ Sync → paste the <b>same token + Gist ID</b> → Pull.</div>
+         <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Gist ID: <b>${c.gist?c.gist:'(created on first push)'}</b>${c.gist?` · <a href="https://gist.github.com/${c.gist}" target="_blank" rel="noopener">view</a>`:''}</div>
+         <div class="note-actions"><button class="note-cancel">Close</button><button id="syncPull">⬇ Pull</button><button class="note-save" id="syncPush">⬆ Push now</button></div>
+         <div style="text-align:right;margin-top:10px"><button id="syncOff" style="border:0;background:transparent;color:var(--alert);font:inherit;font-size:12px;cursor:pointer">Disconnect this device</button></div>`
+       :`<div class="note-hint" style="margin:0 0 8px">Paste a GitHub <b>classic token with the “gist” scope</b> (github.com → Settings → Developer settings → Personal access tokens → Tokens (classic)). It’s stored only in this browser; your data goes to a <b>private</b> Gist.</div>
+         ${inp('syncTok','ghp_… (classic token, gist scope)',true)}
+         <div class="note-hint">Existing Gist ID — only to join data from another device (else leave blank):</div>
+         ${inp('syncGid','(blank = create a new private Gist)',false)}
+         <div class="note-actions"><button class="note-cancel">Cancel</button><button class="note-save" id="syncGo">Connect</button></div>`)+
+      `<div id="syncMsg" style="font-size:12px;color:var(--muted);margin-top:10px;min-height:16px"></div></div>`;
+    document.body.appendChild(ov);
+    const close=()=>ov.remove(),msg=t=>{ov.querySelector('#syncMsg').innerHTML=t;};
+    ov.querySelector('.note-cancel').onclick=close; ov.onmousedown=e=>{if(e.target===ov)close();};
+    if(connected()){
+      ov.querySelector('#syncPush').onclick=async()=>{msg('Pushing…');try{await push();setStatus();msg('Pushed ✓');}catch(e){msg('⚠ '+e.message);}};
+      ov.querySelector('#syncPull').onclick=async()=>{msg('Pulling…');try{const d=await pull();if(d&&d.data){applyData(d.data);msg('Pulled ✓ — reloading…');setTimeout(()=>location.reload(),500);}else msg('Nothing in the cloud yet — Push first.');}catch(e){msg('⚠ '+e.message);}};
+      ov.querySelector('#syncOff').onclick=()=>{if(confirm('Disconnect sync on this device? Your local notes stay; the cloud Gist is untouched.')){lc.removeItem(CK.tok);lc.removeItem(CK.gist);lc.removeItem(CK.ts);close();setStatus();}};
+    }else{
+      ov.querySelector('#syncGo').onclick=async()=>{const tok=ov.querySelector('#syncTok').value.trim(),gid=ov.querySelector('#syncGid').value.trim();
+        if(!tok){msg('Paste a token first.');return;} lc.setItem(CK.tok,tok); if(gid)lc.setItem(CK.gist,gid); msg('Connecting…');
+        try{await api('/gists?per_page=1');const remote=await pull();
+          if(remote&&remote.data){applyData(remote.data);msg('Connected ✓ — pulled your data, reloading…');setTimeout(()=>location.reload(),700);}
+          else{await push();setStatus();msg('Connected ✓ — created a private Gist. Save its ID for your other devices.');setTimeout(()=>{close();modal();},800);}
+        }catch(e){lc.removeItem(CK.tok);if(!gid)lc.removeItem(CK.gist);msg('⚠ '+e.message);}};
+    }
+  }
+  function mount(){
+    const anchor=document.getElementById('backupBtn');if(!anchor){setTimeout(mount,300);return;}
+    if(!document.getElementById('syncBtn')){
+      const b=document.createElement('button');b.id='syncBtn';b.className='resetbtn';b.textContent='☁ Sync';b.onclick=modal;
+      anchor.parentNode.insertBefore(b,anchor.nextSibling);
+      badgeEl=document.createElement('span');badgeEl.id='syncBadge';badgeEl.style.cssText='display:block;font-size:11px;color:var(--muted);margin-top:6px;text-align:center';
+      anchor.parentNode.appendChild(badgeEl);
+    }
+    setStatus();
+    if(connected()&&!sessionStorage.getItem(PREFIX+'syncpulled')){
+      badge('☁ syncing…');
+      pull().then(d=>{ sessionStorage.setItem(PREFIX+'syncpulled','1');
+        if(d&&d.data&&JSON.stringify(d.data)!==JSON.stringify(gather())){applyData(d.data);location.reload();}
+        else setStatus();
+      }).catch(()=>badge('☁ sync error — check token'));
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount);else mount();
+})();
 </script>
 </body>
 </html>
