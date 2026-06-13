@@ -1816,6 +1816,21 @@ function spyDays(){
   },{rootMargin:'-180px 0px -60% 0px',threshold:0});
   DAYS.forEach((_,i)=>{const el=document.getElementById('day-'+i); if(el) _dayObs.observe(el);});
 }
+// On load, open the itinerary at today's date (so you don't scroll past past days).
+function jumpToToday(){
+  const months={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+  const Y=2026; // trip year
+  const today=new Date(); today.setHours(0,0,0,0);
+  const dates=DAYS.map(d=>{const p=String(d.date).split(' '); return new Date(Y,months[p[1]]||0,+p[0]).getTime();});
+  let idx=dates.indexOf(today.getTime());
+  if(idx<0){ if(today.getTime()>dates[dates.length-1]) idx=DAYS.length-1; else return; } // before the trip → leave at the top
+  const scroll=document.getElementById('daystripScroll');
+  const chips=document.querySelectorAll('.daychip');
+  chips.forEach((c,ci)=>c.classList.toggle('active',ci===idx));
+  if(scroll&&chips[idx]) scroll.scrollLeft=chips[idx].offsetLeft-scroll.clientWidth/2+chips[idx].clientWidth/2;
+  const el=document.getElementById('day-'+idx);
+  if(el) requestAnimationFrame(()=>el.scrollIntoView({block:'start'}));
+}
 
 /* ============================= INIT ============================= */
 renderOverview();
@@ -1829,6 +1844,7 @@ renderWeather();
 renderDayStrip();
 setStick();
 spyDays();
+setTimeout(jumpToToday,60);
 document.getElementById('resetTimes').onclick=()=>{ if(confirm('Reset all your TIME and DURATION edits back to the original plan?\n\nThis does NOT affect your spending edits or booking ticks. There is no need to “save” — every change is kept automatically on this device.')) resetTimes(); };
 document.getElementById('backupBtn').onclick=exportEdits;
 document.getElementById('restoreBtn').onclick=()=>document.getElementById('restoreFile').click();
