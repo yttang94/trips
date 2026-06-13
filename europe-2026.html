@@ -755,17 +755,15 @@ const DAYS = [
 
  {date:'16 Jun',dow:'Tue',title:'Dolomites → Venice · Seceda',cc:['it'],sub:'Seceda morning, train to Venice, sunset at San Marco',
   items:[
-    {k:'meal',t:'06:45',title:'Breakfast',dur:'~30 min',detail:'Early & packed before checkout.'},
-    {k:'logistics',t:'07:20',title:'Check out · depart Barbiano',detail:'Bags with you — bus down to Ortisei for the Seceda lift.'},
-    {k:'transit',t:'07:30',title:'Bus Barbiano → Ortisei (Seceda lift)',mode:'bus',travel:'~50 min',detail:'Store bags in the Ortisei lift / station lockers for the morning.',place:'Seceda cable car Ortisei'},
-    {k:'activity',t:'08:30',title:'Seceda summit',dur:'~2.5h',detail:'Cable car up from Ortisei — the big ridge view & a short walk. Leave by 11:00. Ticket: Seceda A/R web 8:30am, €70.50pp (2 pax), serials 145457/145458.',book:{id:'tk-seceda',s:true,lock:true,L:'Seceda A/R · 8:30am'},place:'Seceda cable car Ortisei'},
-    {k:'transit',t:'11:30',title:'Collect bags · bus Ortisei → Bolzano',mode:'bus',travel:'~1h',detail:'SAD bus down the Val Gardena to Bolzano (or to Ponte Gardena for a southbound train).',place:'Bolzano railway station'},
-    {k:'meal',t:'13:00',title:'Lunch (on the move)',dur:'~45 min',detail:'Grab at Bolzano station, or eat onboard.'},
-    {k:'transit',t:'13:35',title:'Bolzano → Verona Porta Nuova',mode:'train',travel:'~1h 30m',detail:'EuroCity (Munich–Verona, roughly 2-hourly) or a Regionale Veloce. ~€20–35pp.',place:'Verona Porta Nuova'},
-    {k:'transit',t:'15:25',title:'Verona Porta Nuova → Venezia Santa Lucia',mode:'train',travel:'~1h 15m',detail:'Frecciarossa/Italo (fast) or a Regionale Veloce — arrives right in Venice, no Mestre car return needed.',place:'Venezia Santa Lucia'},
-    {k:'activity',t:'17:00',title:'Check in · San Croce',dur:'~45 min',detail:'~10-min walk from Santa Lucia to Fondamenta Rizzi.',place:'Fondamenta Rizzi Venezia'},
-    {k:'activity',t:'17:45',title:'Piazza San Marco + sunset',dur:'~2h',hop:{mode:'walk',t:'~20 min',d:'or vaporetto'},detail:'Evening at San Marco — June sunset ~21:00, so plenty of golden hour.',place:'Piazza San Marco Venezia'},
-    {k:'meal',t:'19:30',title:'Dinner',dur:'~1.5h',detail:'Cicchetti crawl or a San Polo trattoria.'}
+    {k:'meal',t:'07:00',title:'Breakfast & checkout',dur:'~40 min',detail:'Packed, bags with you — out for the 07:53 bus from Barbiano.'},
+    {k:'transit',t:'07:53',title:'Bus Barbiano → Seceda lift (Ortisei)',mode:'bus',travel:'~1h 9m',detail:'346 Barbian 07:53 → Waidbruck 08:03 · (22-min wait) · 360 (Gröden) 08:25 → St. Ulrich/Sarteur 08:52 · 10-min walk · Seceda lift 09:02. Store the bags at the Ortisei/Seceda valley station for the hike.',place:'Seceda cable car Ortisei'},
+    {k:'activity',t:'09:15',title:'Seceda summit',dur:'~2.5h',detail:'Cable car up from Ortisei — the big ridge view & a short walk. Ticket booked 8:30 but valid 1 hour, so the 09:02 arrival is fine. €70.50pp (2 pax), serials 145457/145458. Back down by ~12:20.',book:{id:'tk-seceda',s:true,lock:true,L:'Seceda A/R · valid 1h'},place:'Seceda cable car Ortisei'},
+    {k:'transit',t:'12:23',title:'Collect bags · bus Seceda → Ponte Gardena',mode:'bus',travel:'~38 min',detail:'Down from Seceda 12:23 · 10-min walk to St. Ulrich/Sarteur · 360 (Brixen) 12:33 → Waidbruck/Ponte Gardena 13:01. Max €4.50, covered by the pass.',place:'Ponte Gardena-Laion railway station'},
+    {k:'meal',t:'13:05',title:'Lunch at Ponte Gardena',dur:'~45 min',detail:'Grab a bite at/near the station before the 14:00 train.'},
+    {k:'transit',t:'14:00',title:'Ponte Gardena → Venezia Santa Lucia',mode:'train',travel:'~3h 50m',detail:'To Venice (change at Verona) · arrive Santa Lucia 17:50 — right in the city.',book:{id:'tr-vce',s:false,L:'14:00 → 17:50'},place:'Venezia Santa Lucia'},
+    {k:'activity',t:'18:05',title:'Check in · San Croce',dur:'~40 min',detail:'~10-min walk from Santa Lucia to Fondamenta Rizzi. Latest Airbnb check-in is 19:00 — you’re comfortably in time.',place:'Fondamenta Rizzi Venezia'},
+    {k:'activity',t:'18:45',title:'Piazza San Marco + sunset',dur:'~1.5h',hop:{mode:'walk',t:'~20 min',d:'or vaporetto'},detail:'Evening at San Marco — June sunset ~21:00, so you can linger or pop back after dinner.',place:'Piazza San Marco Venezia'},
+    {k:'meal',t:'20:15',title:'Dinner',dur:'~1.5h',detail:'Cicchetti crawl or a San Polo trattoria.'}
   ],
   stay:{nm:'Fondamenta Rizzi',book:{id:'b-acc-ven',s:true},nt:'San Croce · 2 nights (16–17 Jun)',rm:1503,night:751.5,place:'Fondamenta Rizzi Venezia'}},
 
@@ -1089,7 +1087,7 @@ const ENRICH = {
 const OPENINFO = {
  'Duomo + rooftop terraces':{h:'Open Sat · rooftop to ~8pm Fri–Sun (summer)',c:'Your combo also covers the Pinacoteca Ambrosiana (open Sat 10:00–18:00; closed Weds; ticket office 17:30; ~90 min).'},
  'Biblioteca Braidense':{h:'Sat 8:30–13:30 only',c:'It’s a research library — reserve a reading-room seat online + bring photo ID (16+). Short on time? The courtyard is free to admire.'},
- 'Seceda summit':{h:'Cableway daily 8:30–17:00',c:'Summer 2026 needs a pre-booked 30-min timed-entry slot (book on seceda.it). The plateau’s Fermeda chairlift only opens 20 Jun, so plan to walk the ridge. Your stay is in Barbiano (~35–40 min from the Ortisei cable-car station) — leave by ~7am to catch the first lift.'},
+ 'Seceda summit':{h:'Cableway daily 8:30–17:00',c:'Your ticket is booked 8:30 but valid for 1 hour, so the 07:53 bus from Barbiano (reaching the lift ~09:02) works fine. The plateau’s Fermeda chairlift only opens 20 Jun, so plan to walk the ridge.'},
  'E-bike Alpe di Siusi':{h:'Rental 8:00–18:00 · Mont Seuc cable car to 18:00'},
  'Tre Cime parking':{h:'Road open from late May (snow-dependent)',c:'Reconfirm the toll road is actually open 24–48h before (Rifugio Auronzo Facebook / Park Tre Cime). Pre-book the plate + time slot at pass.auronzo.info — free cancellation only up to 5 days before (≈9 Jun for the 15th).'},
  'Rialto Bridge + morning market':{h:'Market mornings only — fish till ~12, produce till ~1:30pm'},
