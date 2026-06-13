@@ -700,7 +700,7 @@ const DAYS = [
   ],
   stay:{nm:'Palazzo Loreto Hotel',book:{id:'b-acc-mil',s:true},nt:'Milano Stazione Centrale · 3.2 km from Duomo · 1 night',rm:665,night:665,place:'Palazzo Loreto Hotel Milano'}},
 
- {date:'13 Jun',dow:'Sat',title:'Milan → Dolomites',cc:['it'],sub:'Brera morning, Duomo, then drive to Ortisei',
+ {date:'13 Jun',dow:'Sat',title:'Milan → Dolomites',cc:['it'],sub:'Brera, Duomo, then evening train to the Dolomites',
   items:[
     {k:'meal',t:'09:00',title:'Brunch in Brera',dur:'~1.25h',detail:'Sit, eat & people-watch. Try Bar Brera (Via Brera) or Fioraio Bianchi Caffè (Via Montebello).',place:'Bar Brera Milano'},
     {k:'activity',t:'10:15',title:'Stroll Brera’s lanes',dur:'~1h',hop:{mode:'walk',t:'2 min'},detail:'Via Fiori Chiari → Via Madonnina → Via Brera: cobbles, boutiques, artists & the Academy courtyard (Napoleon statue). Prime people-watching & photos.',place:'Via Fiori Chiari Milano'},
@@ -709,11 +709,12 @@ const DAYS = [
     {k:'transit',t:'12:25',title:'Walk Brera → La Scala',mode:'walk',travel:'~15 min',dist:'~1.1 km',place:'Teatro alla Scala Milano'},
     {k:'activity',t:'12:40',title:'La Scala (from outside)',dur:'~15 min',detail:'Quick exterior look on the way to the Duomo (the facade is famously plain). 2–3 min through the Galleria to the Duomo.',place:'Teatro alla Scala Milano'},
     {k:'activity',t:'13:00',title:'Duomo + rooftop terraces',dur:'~2h',hop:{mode:'walk',t:'3 min',d:'250 m · via the Galleria'},detail:'Cover shoulders & knees. Opens 9am. Done ~3pm.',book:{id:'tk-duomo',s:true,L:'Stairs + Pinacoteca combo'},place:'Duomo di Milano'},
-    {k:'note',title:'Car pickup 15:30 — amend the booking',detail:'Duomo (booked 1pm) is done ~3pm, so collect the car at 3:30pm. Change the Enterprise pickup from 14:00 → 15:30.'},
-    {k:'transit',t:'15:30',title:'Collect rental car · Milano Centrale',mode:'car',detail:'Enterprise — Piazza Duca d’Aosta 1, Galleria delle Carrozze.',book:{id:'car',s:true,L:'Enterprise'},place:'Enterprise Milano Centrale Galleria delle Carrozze'},
-    {k:'transit',t:'15:45',title:'Drive Milan → Ortisei (via Brixen)',mode:'car',travel:'~4h',dist:'~290 km',detail:'Tea-time stop in Brixen on the way.',place:'Ortisei'},
-    {k:'activity',t:'19:30',title:'Reach Ortisei · check in',detail:'Check in (Gasthof Lamm, Barbiano), then head out to Brixen or Ortisei town.'},
-    {k:'meal',t:'20:00',title:'Dinner',dur:'~1.5h',detail:'In Ortisei town or Brixen (near the Barbiano airbnb).'}
+    {k:'warn',title:'Rental car cancelled — no physical licence',detail:'Enterprise denied the rental (digital licence not accepted). Reaching the Dolomites by train instead; the whole Dolomites leg is now car-free.'},
+    {k:'transit',t:'17:25',title:'Milano Centrale → Verona Porta Nuova',mode:'train',travel:'1h 52m',detail:'Trenord RE 2635 · arrive Verona 19:17 · 33-min change.',book:{id:'tr-dol',s:true,lock:true,L:'Trenord RE 2635 · 17:25'},place:'Verona Porta Nuova'},
+    {k:'transit',t:'19:50',title:'Verona Porta Nuova → Ponte Gardena',mode:'train',travel:'1h 57m',detail:'Trenitalia RV 3848 · via Bolzano · arrive Ponte Gardena/Waidbruck 21:47. 2× Ordinaria, €75.60 for 2.',book:{id:'tr-dol',s:true,lock:true,L:'Trenitalia RV 3848 · 19:50'},place:'Ponte Gardena-Laion railway station'},
+    {k:'transit',t:'21:47',title:'Ponte Gardena → Barbiano (Gasthof Lamm)',mode:'car',travel:'~15 min',detail:'Host pickup arranged (~6–7 km uphill). Backup: bus 345 or a pre-booked taxi.',place:'Gasthof Lamm, Dorf 8, 39040 Barbiano BZ, Italy'},
+    {k:'activity',t:'22:15',title:'Check in · Gasthof Lamm Barbiano',detail:'Late arrival after the rail switch — settle in, early-ish night.',place:'Gasthof Lamm, Dorf 8, 39040 Barbiano BZ, Italy'},
+    {k:'meal',title:'Late bite / dinner',detail:'Eat on the train or a late supper in Barbiano — ask the host what’s open.'}
   ],
   stay:{nm:'Gasthof Lamm · Barbiano',book:{id:'b-acc-ort',s:true},nt:'In Barbiano, ~35–40 min from Ortisei/Val Gardena · 3 nights (13–15 Jun) · cancel by 8 Jun',rm:2373,night:791,place:'Gasthof Lamm, Dorf 8, 39040 Barbiano BZ, Italy',
         alts:[
@@ -895,8 +896,8 @@ const BUDGET=[
   {cat:'Stays',date:'13–15 Jun',n:'Ortisei · Barbiano (3 nights)',rm:2373,id:'b-acc-ort',paid:true},
   {cat:'Stays',date:'16–17 Jun',n:'Venice · Fondamenta Rizzi (2 nights)',rm:1503,id:'b-acc-ven',paid:true},
   {cat:'Stays',date:'18–19 Jun',n:'Zermatt · Arca Aparthotel (2 nights)',rm:1912.75,id:'b-acc-zer',paid:true},
-  {cat:'Car',date:'13 Jun',n:'Rental · Enterprise',eur:385,rm:1751.75,id:'b-car',paid:true,itin:'Collect rental car · Milano Centrale'},
-  {cat:'Car',date:'13–16 Jun',n:'Fuel + tolls',eur:202,rm:919.1,id:'b-carfuel',paid:false,est:true,itin:'Drive Milan → Ortisei (via Brixen)'},
+  {cat:'Trains',date:'13 Jun',n:'Milan → Dolomites · train (Milano → Ponte Gardena, 2 pax)',eur:75.6,rm:362.88,id:'b-car',paid:true,itin:'Milano Centrale → Verona Porta Nuova'},
+  {cat:'Trains',date:'14–16 Jun',n:'South Tyrol transport — Mobilcard + Bolzano→Venice train (est · free buses if the guesthouse gives the Südtirol Guest Pass)',eur:125,rm:600,id:'b-carfuel',paid:false,est:true},
   {cat:'Trains',date:'18 Jun',n:'Venice → Zermatt',rm:865.08,id:'b-tr-vz',paid:true,itin:'Venezia S. Lucia → Milano Centrale'},
   {cat:'Trains',date:'20 Jun',n:'Zermatt → Paris (Visp/Lausanne)',eur:224.12,rm:1039,id:'b-tr-zp',paid:true,itin:'Lausanne → Paris Gare de Lyon'},
   {cat:'Trains',date:'22 Jun',n:'Paris → Mont Saint-Michel',eur:135.2,rm:642.2,id:'b-tr-msm',paid:true,itin:'Paris → Mont Saint-Michel'},
