@@ -874,11 +874,13 @@ const DAYS = [
 
  {date:'23 Jun',dow:'Tue',title:'Paris',cc:['fr'],sub:'Versailles + outlet',
   items:[
-    {k:'meal',t:'08:00',title:'Breakfast',dur:'~30 min',detail:'Before heading to Versailles (RER C).'},
+    {k:'meal',t:'08:00',title:'Breakfast',dur:'~30 min',detail:'Out early to beat the heat — RER C to Versailles.'},
+    {k:'note',title:'🥵 Heatwave plan',detail:'A heatwave is on, so flip the day to dodge the worst sun: mornings are coolest → do the gardens early; midday → the Château then an air-conditioned lunch; the afternoon peak (≈14:00–17:00) → stay cool. Carry a refillable water bottle (free fountains in the gardens), hat, sunglasses, SPF. ⚠️ The Château is a historic palace and is NOT air-conditioned — the Hall of Mirrors gets hot and packed at midday, so move through it efficiently. And La Vallée outlet is an OPEN-AIR village (shops are AC, the lanes are not).'},
     {k:'transit',t:'08:45',title:'Paris → Versailles',mode:'train',travel:'~45 min',dist:'RER C',fare:'~€2.50pp',place:'Palace of Versailles'},
-    {k:'activity',t:'09:45',title:'Palace of Versailles (half day)',dur:'half day',detail:'Booked. Bring the e-ticket; arrive near your timed slot.',book:{id:'tk-versailles',s:true,L:'entrance'},place:'Palace of Versailles'},
-    {k:'meal',t:'13:30',title:'Lunch',dur:'~1h',detail:'Versailles town (near the Notre-Dame market) or at the palace.'},
-    {k:'activity',t:'15:00',title:'Outlet shopping',dur:'half day',hop:{mode:'train',t:'~1h 30m',d:'from Versailles via Paris'},detail:'La Vallée Village (~40 min from Paris).',place:'La Vallée Village'},
+    {k:'activity',t:'09:40',title:'Versailles Gardens & Park (cool morning)',dur:'~2h',detail:'Gardens open ~08:00 and are included in your Passport — do them now while it’s coolest. Stick to the SHADED tree-lined allées and the bosquets (groves), and head for the Grand Canal — rent a rowboat for shade and a breeze. Skip lingering on the open, sun-baked parterres; retreat to a café if it gets too hot.',place:'Gardens of Versailles'},
+    {k:'activity',t:'12:00',title:'Palace of Versailles (half day)',dur:'~2h',detail:'Booked 12:00 timed entry · Entrance A, Pavillon Dufour. Bring the e-ticket. Hall of Mirrors + State Apartments. Note: the palace is NOT air-conditioned and is busiest at midday — keep moving and carry water.',book:{id:'tk-versailles',s:true,lock:true,L:'Passeport · 12:00 · Entrée A'},place:'Palace of Versailles'},
+    {k:'meal',t:'14:00',title:'Lunch — air-conditioned (heat refuge)',dur:'~1.25h',detail:'Cool down indoors: Angelina tea room, Ore – Ducasse au Château, the Grand Café d’Orléans, or La Petite Venise by the Grand Canal. This is your midday heat shelter.'},
+    {k:'activity',t:'15:45',title:'Outlet shopping — La Vallée Village',dur:'half day',hop:{mode:'train',t:'~1h 30m',d:'from Versailles via Paris'},detail:'⚠️ OPEN-AIR village — the shops are air-conditioned but the lanes aren’t, so duck shop-to-shop, hydrate, or do the bulk later as it cools toward evening. ~1.5h from Versailles (east of Paris).'},
     {k:'meal',t:'20:00',title:'Dinner',dur:'~1.5h',detail:'Back in Paris — final dinner with relatives.'}
   ],
   stay:{free:'Relative’s house'}},
