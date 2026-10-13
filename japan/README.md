@@ -118,7 +118,8 @@ Range RM 450–565.
 |---|---|---|
 | Flights (NH, 4 legs incl. HND⇄CTS) | 2,500 | Booked. Past trips were ~2,200. |
 | Club Med Kiroro, 4 nights | ~5,650 | USD 1,317.38 + 60 membership, at ~4.10 MYR/USD |
-| Kiroro extras (ski/board rental, maybe transfers) | ~750 | Rental is **not** included; transfers vary by package, so check the voucher |
+| Kiroro: ski/board rental, 4 days | ~520 | Not included in Club Med |
+| Kiroro: airport ⇄ resort by train + bus, round trip | ~230 | JR New Chitose → Otaru (~¥2,040, ~75 min), then bus Otaru Chikko → Kiroro (~45 min). Bus fare to confirm; few departures a day, so time it around the 11:05 arrival and 17:25 departure |
 | 7 unplanned nights × RM 500 | 3,500 | 2 Tokyo + 5 Fuji area. Range 3,150–3,955 |
 | 4 Apr (no hotel; car return, food, airport) | ~150 | |
 | **Total** | **~12,550** | Range ~12,200–13,000 |
