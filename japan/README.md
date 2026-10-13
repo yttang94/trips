@@ -102,6 +102,31 @@ Budget cap RM 15k for two.
 
 Club Med cost on the voucher: $1,317.38 + $60 membership per person (currency to confirm).
 
+### Budget estimate (per person, RM) — Oct 2026
+**Past trips, flights taken out, "all-in" cost per night per person:**
+| Trip | Basis | Ex-flight per person | Nights | **Per night** |
+|---|---|---|---|---|
+| 2024 Kansai | actual spend (sheet total RM 14,597 for two, shopping excluded) | 5,083 | 9 | **565** (534 without USJ) |
+| 2025 Tokyo–Hokkaido | plan, wedding photographer removed | 3,289 | 10 | 329 (plan left out entry fees and local transport, and food was estimated low) |
+| 2025 Tokyo–Hokkaido | RM 15k cap, photographer removed | 4,571 | 10 | 457 |
+
+Working rate: **RM 500 / night / person**, covering stay + food + transport + car + activities.
+Range RM 450–565.
+
+**2027 trip:**
+| Item | RM pp | Notes |
+|---|---|---|
+| Flights (NH, 4 legs incl. HND⇄CTS) | 2,500 | Booked. Past trips were ~2,200. |
+| Club Med Kiroro, 4 nights | ~5,650 | USD 1,317.38 + 60 membership, at ~4.10 MYR/USD |
+| Kiroro extras (ski/board rental, maybe transfers) | ~750 | Rental is **not** included; transfers vary by package, so check the voucher |
+| 7 unplanned nights × RM 500 | 3,500 | 2 Tokyo + 5 Fuji area. Range 3,150–3,955 |
+| 4 Apr (no hotel; car return, food, airport) | ~150 | |
+| **Total** | **~12,550** | Range ~12,200–13,000 |
+
+Club Med is ~45% of the trip. The non-Club Med part (~7k) is in line with past trips.
+Savings levers: cheaper Tokyo stay near Haneda (Kamata/Keikyu line), basing in the
+Kofu basin instead of Kawaguchiko, a temple stay (shukubo) instead of a hotel night.
+
 ### Shape of the trip
 - **24–26 Mar · Tokyo, 2 nights, 1 full day (Thu 25).** Stay near Haneda
   (Hamamatsucho or Shinagawa) for the 09:30 flight on the 26th. The 25th is a good
